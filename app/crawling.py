@@ -43,19 +43,33 @@ class ArticleCrawler:
 
     def fetch_news_links(self, publisher_url: str) -> List[str]:
         # 언론사 URL에서 뉴스 기사 링크 추출
-        soup = self.fetch_html(publisher_url)
-        if not soup:
-            return []
-
         links = []
-        news_body = soup.find("div", class_="list_body newsflash_body")
-        if news_body:
+        page = 1  # 페이지 번호 시작
+
+        while True:
+            paging_url = f"{publisher_url}&page={page}"
+            soup = self.fetch_html(paging_url)
+            if not soup:
+                break
+
+            news_body = soup.find("div", class_="list_body newsflash_body")
+            if not news_body:  # 더 이상 기사 목록이 없으면 중단
+                break
+
+            page_links = []
             for ul in news_body.find_all("ul"):
                 for li in ul.find_all("li"):
                     link_tag = li.find("dt").find("a")
                     if link_tag:
-                        links.append(link_tag["href"])
+                        page_links.append(link_tag["href"])
 
+            if not page_links:  # 해당 페이지에 기사 링크가 없으면 종료
+                break
+
+            links.extend(page_links)
+            page += 1
+        
+        logger.info(f"{len(links)}개 기사 확인.")
         return links
 
     def fetch_article_links(self, all_publisher_url: str) -> List[str]:
