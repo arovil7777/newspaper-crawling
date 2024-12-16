@@ -7,22 +7,16 @@ from datetime import datetime
 from typing import List, Dict
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ThreadPoolExecutor
-from fake_useragent import UserAgent
 from tqdm import tqdm
 
 
 class ArticleCrawler:
     BASE_URL = "https://news.naver.com"
 
-    def __init__(self):
-        # UserAgent 초기화
-        self.ua = UserAgent()
-
     def fetch_html(self, url: str) -> BeautifulSoup:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
         try:
-            headers = {"User-Agent": self.ua.chrome}  # User-Agent 설정
-            response = requests.get(url, headers=headers, timeout=10)
+            response = requests.get(url, timeout=10)
             response.raise_for_status()
             return BeautifulSoup(response.text, "html.parser")
         except requests.RequestException as e:

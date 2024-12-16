@@ -1,3 +1,5 @@
+import traceback
+import sys
 from app.crawling import ArticleCrawler
 from app.config import logger
 from app.processing import (
@@ -56,6 +58,10 @@ def main():
         logger.info("작업이 완료되었습니다.")
     except Exception as e:
         logger.critical(f"예기치 못한 에러 발생: {e}")
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        logger.critical(
+            "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
 beautifulsoup4==4.12.3
-fake-useragent==1.4.0
 happybase==1.2.0
 hdfs==2.7.3
 lxml_html_clean==0.4.1
