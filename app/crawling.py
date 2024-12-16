@@ -6,16 +6,23 @@ from app.config import logger
 from datetime import datetime
 from typing import List, Dict
 from multiprocessing import Pool, cpu_count
+from concurrent.futures import ThreadPoolExecutor
+from fake_useragent import UserAgent
 from tqdm import tqdm
 
 
 class ArticleCrawler:
     BASE_URL = "https://news.naver.com"
 
+    def __init__(self):
+        # UserAgent 초기화
+        self.ua = UserAgent()
+
     def fetch_html(self, url: str) -> BeautifulSoup:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
         try:
-            response = requests.get(url, timeout=10)
+            headers = {"User-Agent": self.ua.chrome}  # User-Agent 설정
+            response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             return BeautifulSoup(response.text, "html.parser")
         except requests.RequestException as e:
@@ -41,36 +48,41 @@ class ArticleCrawler:
             for tag in soup.select("ul.massmedia > li > a")
         ]
 
-    def fetch_news_links(self, publisher_url: str) -> List[str]:
-        # 언론사 URL에서 뉴스 기사 링크 추출
+    def fetch_page_links(self, paginated_url: str) -> List[str]:
+        soup = self.fetch_html(paginated_url)
+        if not soup:
+            return []
+
+        news_body = soup.find("div", class_="list_body newsflash_body")
+        if not news_body:
+            return []
+
+        return [
+            li.find("dt").find("a")["href"]
+            for ul in news_body.find_all("ul")
+            for li in ul.find_all("li")
+            if li.find("dt") and li.find("dt").find("a")
+        ]
+
+    def fetch_news_links_parallel(
+        self, publisher_url: str, max_pages: int = 20
+    ) -> List[str]:
         links = []
-        page = 1  # 페이지 번호 시작
+        max_workers = max(1, (cpu_count() * 2) + 1)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(self.fetch_page_links, f"{publisher_url}&page={page}")
+                for page in range(1, max_pages + 1)
+            ]
 
-        while True:
-            paging_url = f"{publisher_url}&page={page}"
-            soup = self.fetch_html(paging_url)
-            if not soup:
-                break
+            for future in futures:
+                try:
+                    page_links = future.result()
+                    links.extend(page_links)
+                except Exception as e:
+                    logger.error(f"페이지 크롤링 중 오류: {e}")
 
-            news_body = soup.find("div", class_="list_body newsflash_body")
-            if not news_body:  # 더 이상 기사 목록이 없으면 중단
-                break
-
-            page_links = []
-            for ul in news_body.find_all("ul"):
-                for li in ul.find_all("li"):
-                    link_tag = li.find("dt").find("a")
-                    if link_tag:
-                        page_links.append(link_tag["href"])
-
-            if not page_links:  # 해당 페이지에 기사 링크가 없으면 종료
-                break
-
-            links.extend(page_links)
-            page += 1
-        
-        logger.info(f"{len(links)}개 기사 확인.")
-        return links
+        return list(set(links))  # 중복 제거거
 
     def fetch_article_links(self, all_publisher_url: str) -> List[str]:
         # 전체 언론사 URL에서 모든 뉴스 기사 링크 추출
@@ -84,7 +96,7 @@ class ArticleCrawler:
             for publisher_url in tqdm(
                 publisher_links, desc="언론사 수집 중", unit="언론사", colour="blue"
             ):
-                all_links.extend(self.fetch_news_links(publisher_url))
+                all_links.extend(self.fetch_news_links_parallel(publisher_url))
 
         return all_links
 
