@@ -30,4 +30,6 @@ logging.basicConfig(
     handlers=[logging.FileHandler(log_file, encoding="utf-8"), logging.StreamHandler()],
 )
 
+# WebDriver Manager 로깅 비활성화
+os.environ["WDM_LOG"] = "0"
 logger = logging.getLogger(__name__)
