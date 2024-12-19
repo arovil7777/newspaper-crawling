@@ -55,48 +55,45 @@ def main():
 
     crawler = ArticleCrawler()
     try:
-        logger.info("뉴스 링크 수집 중...")
+        logger.info("뉴스 링크 수집 및 크롤링 중...")
 
-        # 7일 단위로 날짜를 분할
-        date_ranges = calculate_date_ranges(start_date, end_date, interval=7)
+        # 1일 단위로 날짜를 분할
+        date_ranges = calculate_date_ranges(start_date, end_date, interval=1)
         logger.info(f"수집할 날짜 범위: {date_ranges}")
 
-        # 뉴스 링크 수집
-        all_article_links = []
         for start, end in date_ranges:
+            # 뉴스 링크 수집
             article_links = crawler.fetch_article_links(all_publisher_url, start, end)
-            all_article_links.extend(article_links)
 
-        if not article_links:
-            logger.warning("수집된 뉴스 링크가 없습니다.")
-            return
+            if not article_links:
+                logger.warning(f"{start} ~ {end} 기간 동안 수집된 뉴스 링크가 없습니다.")
+                continue
 
-        # 뉴스 본문 내용 추출
-        articles = crawler.fetch_articles(article_links)
-        logger.info(f"{len(articles)}개의 기사를 크롤링했습니다.")
+            # 뉴스 본문 내용 추출
+            articles = crawler.fetch_articles(article_links)
+            logger.info(f"{start} ~ {end} 기간 동안 {len(articles)}개의 기사를 크롤링했습니다.")
 
-        if articles:
-            logger.info(f"크롤링 완료. 총 {len(articles)}개의 기사 수집")
+            if articles:
+                logger.info(f"크롤링 완료. {start} ~ {end} 기간 동안 총 {len(articles)}개의 기사 수집")
 
-            # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
-            local_file_path = save_data_format("CSV", articles)
-            """
-            # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
+                # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
+                local_file_path = save_data_format("CSV", articles)
+                """
+                # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 
-            # 2. CSV 데이터를 HBase로 저장
-            # if local_file_path:
-            #     send_to_hbase(local_file_path, Config.TABLE_NAME)
-            # # HDFS로 전송
-            # hdfs_file_path = send_to_hdfs(local_file_path)
+                # 2. CSV 데이터를 HBase로 저장
+                # if local_file_path:
+                #     send_to_hbase(local_file_path, Config.TABLE_NAME)
+                # # HDFS로 전송
+                # hdfs_file_path = send_to_hdfs(local_file_path)
 
-            # # HDFS에서 HBase로 전송
-            # if hdfs_file_path:
-            #     send_to_hbase(hdfs_file_path, local_file_path)
-            """
+                # # HDFS에서 HBase로 전송
+                # if hdfs_file_path:
+                #     send_to_hbase(hdfs_file_path, local_file_path)
+                """
+            else:
+                logger.warning(f"{start} ~ {end} 기간 동안 크롤링된 기사가 없습니다.")
 
-        else:
-            logger.warning("크롤링된 기사가 없습니다.")
-            return
         logger.info("작업이 완료되었습니다.")
     except Exception as e:
         logger.critical(f"예기치 못한 에러 발생: {e}")
