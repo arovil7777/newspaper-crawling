@@ -21,6 +21,9 @@ class Config:
     HDFS_URL = os.getenv("HDFS_URL", "http://localhost:9870")
     HDFS_USER = os.getenv("HDFS_USER", "hadoop")
     HDFS_DIR = os.getenv("HDFS_DIR", "/data")
+    HBASE_HOST = os.getenv("HBASE_HOST", "http://localhost")
+    HBASE_PORT = os.getenv("HBASE_PORT", "9090")
+    TABLE_NAME = os.getenv("TABLE_NAME", "articles_table")
 
 
 # 로깅 설정
