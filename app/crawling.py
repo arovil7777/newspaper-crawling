@@ -1,19 +1,19 @@
 from bs4 import BeautifulSoup
 from newspaper import Article
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+# from selenium import webdriver
+# from selenium.webdriver.common.by import By
+# from selenium.webdriver.chrome.service import Service
+# from selenium.webdriver.support.ui import WebDriverWait
+# from selenium.webdriver.support import expected_conditions as EC
+# from app.utils.driver_handler import DriverUtils
+# from app.templates.template_select import get_content_template
 from kiwipiepy import Kiwi
-from sklearn.feature_extraction.text import TfidfVectorizer
+# from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Dict
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-from app.utils.driver_handler import DriverUtils
 from app.config import logger
-from app.templates.template_select import get_content_template
 from datetime import datetime, timedelta
 import requests
 import certifi
@@ -113,12 +113,12 @@ class ArticleCrawler:
         ]
 
     def fetch_news_links_parallel(
-        self, category_name: str, publisher_url: str, max_pages: int = 20
+        self, category_name: str, publisher_url: str, date_str: str, max_pages: int = 10
     ) -> List[Dict[str, str]]:
         def process_page(page):
             return self.fetch_page_links(f"{publisher_url}&page={page}")
 
-        max_workers = min(max(1, cpu_count()), max_pages)
+        max_workers = min(max(1, cpu_count() - 2), max_pages)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(process_page, page) for page in range(1, max_pages + 1)
@@ -128,7 +128,7 @@ class ArticleCrawler:
                 try:
                     page_links = future.result()
                     results.extend(
-                        {"category": category_name, "url": link} for link in page_links
+                        {"category": category_name, "url": link, "published_at": date_str} for link in page_links
                     )
                 except Exception as e:
                     logger.error(f"페이지 크롤링 중 오류: {e}")
@@ -162,7 +162,7 @@ class ArticleCrawler:
             ):
                 all_links.extend(
                     self.fetch_news_links_parallel(
-                        publisher["category_name"], publisher["publisher_url"]
+                        publisher["category_name"], publisher["publisher_url"], start_date
                     )
                 )
 
@@ -173,17 +173,21 @@ class ArticleCrawler:
         try:
             url = article_info["url"]
             self.data_template.update(
-                {"url": url, "category": article_info["category"]}
+                {"url": url, "category": article_info["category"], "published_at": article_info["published_at"]}
             )
 
             article = Article(url, language="ko")
             article.download()
             article.parse()
 
-            content = article.text or self.get_crawling_data(url)["content"]
-            published_at = (
-                article.publish_date or self.get_crawling_data(url)["published_at"]
-            )
+            content = article.text
+            if not article.text:
+                # content = self.get_crawling_data(url)["content"]
+                pass
+            # published_at = article.publish_date
+            # if not article.publish_date:
+                # published_at = self.get_crawling_data(url)["published_at"]
+                # pass
             #     article.nlp()
             #     self.data_template["summary"] = article.summary
 
@@ -191,7 +195,7 @@ class ArticleCrawler:
                 {
                     "title": article.title,
                     "content": content,
-                    "published_at": published_at,
+                    # "published_at": published_at,
                     # "nouns": self.extract_nouns(content),
                 }
             )
@@ -237,7 +241,7 @@ class ArticleCrawler:
 
     def fetch_articles(self, article_links: List[str]) -> List[Dict[str, str]]:
         # 멀티 프로세싱으로 기사 본문 내용 추출
-        num_workers = min(len(article_links), cpu_count())
+        num_workers = min(len(article_links), cpu_count() * 2)
         with Pool(processes=num_workers) as pool:
             articles = list(
                 tqdm(
@@ -249,6 +253,7 @@ class ArticleCrawler:
             )
         return [article for article in articles if article]
 
+    """
     def get_crawling_data(self, url: str):
         driver = DriverUtils.get_driver()
         crawling_data = {"content": "", "published_at": ""}
@@ -265,7 +270,7 @@ class ArticleCrawler:
                 logger.error(f"템플릿을 찾을 수 없습니다: {url}")
                 return crawling_data
 
-            content_element = WebDriverWait(driver, 2).until(
+            content_element = WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located(
                     (By.CLASS_NAME, template["content_selector"])
                 )
@@ -293,6 +298,7 @@ class ArticleCrawler:
         except Exception as e:
             logger.error(f"본문 크롤링 작업 중 오류 (Selenium) {url}: {str(e)}")
             return crawling_data
+    """
 
     def get_template_with_cache(self, cache_key, fetch_function, *args):
         # 캐시를 활용한 템플릿 조회
@@ -304,12 +310,15 @@ class ArticleCrawler:
             self.template_cache[cache_key] = template
         return template
 
+    """
     def extract_nouns(self, content: str) -> List[str]:
         if not content:
             return []
         tokens = self.kiwi.analyze(content)[0][0]
         return [token[0] for token in tokens if token[1].startswith("NN")]
+    """
 
+    """
     def extract_keywords_using_tfidf(self, articles: List[Dict[str, str]]):
         # TF-IDF 기법을 사용하여 명사만으로 키워드 추출
         noun_contents = [
@@ -334,3 +343,4 @@ class ArticleCrawler:
 
         # 키워드 추출
         return sorted(zip(feature_names, scores), key=lambda x: x[1], reverse=True)
+    """
