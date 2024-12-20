@@ -3,8 +3,6 @@ import sys
 from datetime import datetime, timedelta
 from app.crawling import ArticleCrawler
 from app.config import logger
-from multiprocessing import cpu_count
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.processing import (
     save_articles_to_db,
     save_articles_to_csv,
@@ -50,8 +48,8 @@ def main():
     )
 
     # 기간 설정
-    start_date = "20241201"  # 시작 날짜 (YYYYMMDD 형식)
-    end_date = "20241207"  # 종료 날짜 (YYYYMMDD 형식)
+    start_date = "20241208"  # 시작 날짜 (YYYYMMDD 형식)
+    end_date = "20241214"  # 종료 날짜 (YYYYMMDD 형식)
 
     crawler = ArticleCrawler()
     all_articles = []  # 크롤링한 전체 기사 데이터
@@ -85,7 +83,7 @@ def main():
 
             if all_articles:
                 # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
-                local_file_path = save_data_format("CSV", articles, start)
+                local_file_path = save_data_format("CSV", articles, date=start)
                 """
                 # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 

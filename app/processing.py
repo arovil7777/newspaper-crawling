@@ -5,7 +5,6 @@ from app.utils.json_handler import save_to_json, load_from_json
 from app.utils.hdfs_handler import HDFSConnector
 from app.utils.hbase_handler import HBaseConnector
 from app.config import Config, logger
-from datetime import datetime
 
 
 def create_data_dir_with_date(date_str: str):
