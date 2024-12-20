@@ -8,13 +8,12 @@ from app.config import Config, logger
 from datetime import datetime
 
 
-data_dir = "data"
-if not os.path.exists(data_dir):
-    os.makedirs(data_dir)
-
-data_dir_with_date = data_dir + f"/{datetime.now().strftime('%Y%m%d')}"
-if not os.path.exists(data_dir_with_date):
-    os.makedirs(data_dir_with_date)
+def create_data_dir_with_date(date_str: str):
+    data_dir = "data"
+    data_dir_with_date = os.path.join(data_dir, date_str)
+    if not os.path.exists(data_dir_with_date):
+        os.makedirs(data_dir_with_date)
+    return data_dir_with_date
 
 
 def save_articles_to_db(data, collection_name=Config.CRAWLING_COLLECTION):
@@ -35,18 +34,23 @@ def save_articles_to_db(data, collection_name=Config.CRAWLING_COLLECTION):
         db.close_connection()
 
 
-def save_articles_to_csv(data):
+def save_articles_to_csv(data, date_str):
     # 크롤링 기사를 CSV 파일로 저장
-    file_path = os.path.join(
-        data_dir_with_date, f"articles_{datetime.now().strftime('%Y%m%d%H%M%S')}.csv"
-    )
+    if not data:
+        logger.error("저장할 데이터가 없습니다.")
+        return None
+
+    file_paths = []
+    data_dir_with_date = create_data_dir_with_date(date_str)
+    file_path = os.path.join(data_dir_with_date, f"articles_{date_str}.csv")
     try:
         save_to_csv(data, file_path)
         logger.info(f"로컬에 CSV 파일 저장 완료: {file_path}")
-        return file_path
+        file_paths.append(file_path)
     except Exception as e:
         logger.error(f"CSV 저장 중 오류 발생: {e}")
-        return None
+
+    return file_paths
 
 
 def load_articles_from_csv(file_path):
@@ -58,18 +62,23 @@ def load_articles_from_csv(file_path):
         return []
 
 
-def save_articles_to_json(data):
+def save_articles_to_json(data, date_str):
     # 크롤링 기사를 JSON 파일로 저장
-    file_path = os.path.join(
-        data_dir_with_date, f"articles_{datetime.now().strftime('%Y%m%d%H%M%S')}.json"
-    )
+    if not data:
+        logger.error("저장할 데이터가 없습니다.")
+        return None
+
+    file_paths = []
+    data_dir_with_date = create_data_dir_with_date(date_str)
+    file_path = os.path.join(data_dir_with_date, f"articles_{date_str}.json")
     try:
         save_to_json(data, file_path)
         logger.info(f"로컬에 JSON 파일 저장 완료: {file_path}")
-        return file_path
+        file_paths.append(file_path)
     except Exception as e:
         logger.error(f"JSON 저장 중 오류 발생: {e}")
-        return None
+
+    return file_paths
 
 
 def load_articles_from_json(file_path):

@@ -12,10 +12,6 @@ def datetime_convert(o):
 
 def save_to_json(data, file_path):
     # 데이터를 JSON 파일로 저장
-    if not data:
-        logger.warning("저장할 데이터가 존재하지 않습니다.")
-        return
-
     try:
         with open(file_path, mode="w", encoding="utf-8") as jsonfile:
             json.dump(

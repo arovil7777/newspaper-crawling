@@ -1,4 +1,5 @@
 beautifulsoup4==4.12.3
+fake-useragent==1.5.1
 happybase==1.2.0
 hdfs==2.7.3
 lxml_html_clean==0.4.1
@@ -10,3 +11,4 @@ requests==2.31.0
 scikit-learn==1.0.2
 selenium==4.11.2
 tqdm==4.67.1
+webdriver-manager==4.0.2

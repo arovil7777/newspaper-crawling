@@ -33,10 +33,10 @@ class ArticleCrawler:
         # "summary": "요약 확인할 수 없음",
         "title": "제목 확인할 수 없음",
         "content": "본문 확인할 수 없음",
-        "writer": "작성자 확인할 수 없음",
+        # "writer": "작성자 확인할 수 없음",
         "publisher": "언론사 확인할 수 없음",
         "category": "카테고리 확인할 수 없음",
-        "nouns": "명사 확인할 수 없음",
+        # "nouns": "명사 확인할 수 없음",
         "published_at": "작성일 확인할 수 없음",
         # "updated_at": "수정일 확인할 수 없음",
         "scraped_at": datetime.now(),
@@ -113,12 +113,12 @@ class ArticleCrawler:
         ]
 
     def fetch_news_links_parallel(
-        self, category_name: str, publisher_url: str, max_pages: int = 50
+        self, category_name: str, publisher_url: str, max_pages: int = 20
     ) -> List[Dict[str, str]]:
         def process_page(page):
             return self.fetch_page_links(f"{publisher_url}&page={page}")
 
-        max_workers = min(max(1, cpu_count() * 2), max_pages)
+        max_workers = min(max(1, cpu_count()), max_pages)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(process_page, page) for page in range(1, max_pages + 1)
@@ -201,6 +201,7 @@ class ArticleCrawler:
             if match:
                 self.data_template["article_id"] = match.group(1)
 
+            """
             soup = self.fetch_html(url)
             if soup:
                 # 기사 작성자 수집
@@ -210,7 +211,6 @@ class ArticleCrawler:
 
                 if writer_tag is not None:
                     self.data_template["writer"] = writer_tag.text.strip()
-            """
             #     # 언론사 수집
             #     publisher_tag = soup.find("meta", property="og:article:author")
             #     if publisher_tag:
@@ -237,7 +237,7 @@ class ArticleCrawler:
 
     def fetch_articles(self, article_links: List[str]) -> List[Dict[str, str]]:
         # 멀티 프로세싱으로 기사 본문 내용 추출
-        num_workers = min(len(article_links), cpu_count() * 2)
+        num_workers = min(len(article_links), cpu_count())
         with Pool(processes=num_workers) as pool:
             articles = list(
                 tqdm(

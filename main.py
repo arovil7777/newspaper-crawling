@@ -14,13 +14,13 @@ from app.processing import (
 )
 
 
-def save_data_format(format, articles):
+def save_data_format(format, articles, date):
     if format == "CSV":
         # 로컬 CSV 파일에 크롤링 데이터 저장
-        return save_articles_to_csv(articles)
+        return save_articles_to_csv(articles, date)
     elif format == "JSON":
         # 로컬 JSON 파일에 크롤링 데이터 저장
-        return save_articles_to_json(articles)
+        return save_articles_to_json(articles, date)
     else:
         return None
 
@@ -54,30 +54,38 @@ def main():
     end_date = "20241207"  # 종료 날짜 (YYYYMMDD 형식)
 
     crawler = ArticleCrawler()
+    all_articles = []  # 크롤링한 전체 기사 데이터
     try:
-        logger.info("뉴스 링크 수집 및 크롤링 중...")
+        logger.info("뉴스 링크 수집 중...")
 
-        # 1일 단위로 날짜를 분할
+        # 7일 단위로 날짜를 분할
         date_ranges = calculate_date_ranges(start_date, end_date, interval=1)
         logger.info(f"수집할 날짜 범위: {date_ranges}")
 
         for start, end in date_ranges:
+            logger.info(f"{start}부터 {end}까지 뉴스 링크 수집 중...")
+
             # 뉴스 링크 수집
             article_links = crawler.fetch_article_links(all_publisher_url, start, end)
 
             if not article_links:
-                logger.warning(f"{start} ~ {end} 기간 동안 수집된 뉴스 링크가 없습니다.")
+                logger.warning(f"{start}부터 {end}까지 수집된 뉴스 링크가 없습니다.")
                 continue
 
             # 뉴스 본문 내용 추출
             articles = crawler.fetch_articles(article_links)
-            logger.info(f"{start} ~ {end} 기간 동안 {len(articles)}개의 기사를 크롤링했습니다.")
+            logger.info(f"{len(articles)}개의 기사를 크롤링했습니다.")
 
             if articles:
-                logger.info(f"크롤링 완료. {start} ~ {end} 기간 동안 총 {len(articles)}개의 기사 수집")
+                logger.info(f"크롤링 완료. 총 {len(articles)}개의 기사 수집")
+                all_articles.extend(articles)
+            else:
+                logger.warning(f"{start}부터 {end}까지 크롤링된 기사가 없습니다.")
+                continue
 
+            if all_articles:
                 # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
-                local_file_path = save_data_format("CSV", articles)
+                local_file_path = save_data_format("CSV", articles, start)
                 """
                 # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 
@@ -92,8 +100,8 @@ def main():
                 #     send_to_hbase(hdfs_file_path, local_file_path)
                 """
             else:
-                logger.warning(f"{start} ~ {end} 기간 동안 크롤링된 기사가 없습니다.")
-
+                logger.warning(f"{start}부터 {end}까지 크롤링된 기사가 없습니다.")
+                continue
         logger.info("작업이 완료되었습니다.")
     except Exception as e:
         logger.critical(f"예기치 못한 에러 발생: {e}")
