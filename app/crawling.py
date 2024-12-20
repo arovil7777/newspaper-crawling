@@ -1,13 +1,15 @@
 from bs4 import BeautifulSoup
 from newspaper import Article
+
 # from selenium import webdriver
 # from selenium.webdriver.common.by import By
 # from selenium.webdriver.chrome.service import Service
 # from selenium.webdriver.support.ui import WebDriverWait
 # from selenium.webdriver.support import expected_conditions as EC
 # from app.utils.driver_handler import DriverUtils
-# from app.templates.template_select import get_content_template
+from app.templates.template_select import get_content_template
 from kiwipiepy import Kiwi
+
 # from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Dict
 from multiprocessing import Pool, cpu_count
@@ -113,7 +115,7 @@ class ArticleCrawler:
         ]
 
     def fetch_news_links_parallel(
-        self, category_name: str, publisher_url: str, date_str: str, max_pages: int = 10
+        self, category_name: str, publisher_url: str, date_str: str, max_pages: int = 1
     ) -> List[Dict[str, str]]:
         def process_page(page):
             return self.fetch_page_links(f"{publisher_url}&page={page}")
@@ -128,7 +130,12 @@ class ArticleCrawler:
                 try:
                     page_links = future.result()
                     results.extend(
-                        {"category": category_name, "url": link, "published_at": date_str} for link in page_links
+                        {
+                            "category": category_name,
+                            "url": link,
+                            "published_at": date_str,
+                        }
+                        for link in page_links
                     )
                 except Exception as e:
                     logger.error(f"페이지 크롤링 중 오류: {e}")
@@ -162,7 +169,9 @@ class ArticleCrawler:
             ):
                 all_links.extend(
                     self.fetch_news_links_parallel(
-                        publisher["category_name"], publisher["publisher_url"], start_date
+                        publisher["category_name"],
+                        publisher["publisher_url"],
+                        start_date,
                     )
                 )
 
@@ -173,21 +182,27 @@ class ArticleCrawler:
         try:
             url = article_info["url"]
             self.data_template.update(
-                {"url": url, "category": article_info["category"], "published_at": article_info["published_at"]}
+                {
+                    "url": url,
+                    "category": article_info["category"],
+                    "published_at": article_info["published_at"],
+                }
             )
 
             article = Article(url, language="ko")
             article.download()
             article.parse()
 
-            content = article.text
-            if not article.text:
-                # content = self.get_crawling_data(url)["content"]
-                pass
-            # published_at = article.publish_date
+            content = article.text or self.get_crawling_data(url)["content"]
+            # if not article.text:
+            # content = self.get_crawling_data(url)["content"]
+            # pass
+            published_at = (
+                article.publish_date or self.get_crawling_data(url)["published_at"]
+            )
             # if not article.publish_date:
-                # published_at = self.get_crawling_data(url)["published_at"]
-                # pass
+            # published_at = self.get_crawling_data(url)["published_at"]
+            # pass
             #     article.nlp()
             #     self.data_template["summary"] = article.summary
 
@@ -195,7 +210,7 @@ class ArticleCrawler:
                 {
                     "title": article.title,
                     "content": content,
-                    # "published_at": published_at,
+                    "published_at": published_at,
                     # "nouns": self.extract_nouns(content),
                 }
             )
@@ -299,6 +314,45 @@ class ArticleCrawler:
             logger.error(f"본문 크롤링 작업 중 오류 (Selenium) {url}: {str(e)}")
             return crawling_data
     """
+
+    def get_crawling_data(self, url: str):
+        crawling_data = {"content": "", "published_at": ""}
+
+        try:
+            soup = self.fetch_html(url)
+            if not soup:
+                return crawling_data
+
+            # 기사 본문 템플릿 호출
+            template = self.get_template_with_cache(url, get_content_template, url)
+            if not template:
+                logger.error(f"템플릿을 찾을 수 없습니다: {url}")
+                return crawling_data
+
+            content_element = soup.select_one(f".{template['content_selector']}")
+            if content_element:
+                crawling_data["content"] = content_element.get_text(strip=True)
+
+            date_elements = soup.select(f".{template['date_selector']}")
+            for date_element in date_elements:
+                date = (
+                    date_element.find("span")
+                    if template["site"] == "n.news.naver.com"
+                    else date_element.find("em")
+                )
+                date_text = (
+                    date.get(template["date_attribute"], "")
+                    .replace("오전", "AM")
+                    .replace("오후", "PM")
+                )
+                if date_text:
+                    crawling_data["published_at"] = date_text
+                    break
+
+            return crawling_data
+        except Exception as e:
+            logger.error(f"본문 크롤링 작업 중 오류 {url}: {str(e)}")
+            return crawling_data
 
     def get_template_with_cache(self, cache_key, fetch_function, *args):
         # 캐시를 활용한 템플릿 조회
