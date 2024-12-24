@@ -1,31 +1,39 @@
+import requests
 from bs4 import BeautifulSoup
 from newspaper import Article
-
-# from selenium import webdriver
-# from selenium.webdriver.common.by import By
-# from selenium.webdriver.chrome.service import Service
-# from selenium.webdriver.support.ui import WebDriverWait
-# from selenium.webdriver.support import expected_conditions as EC
-# from app.utils.driver_handler import DriverUtils
+from app.utils.driver_handler import DriverUtils
 from app.templates.template_select import get_content_template
 from kiwipiepy import Kiwi
-
-# from sklearn.feature_extraction.text import TfidfVectorizer
 from typing import List, Dict
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from app.config import logger
 from datetime import datetime, timedelta
-import requests
 import certifi
 import re
+import traceback
+import sys
+
+# from sklearn.feature_extraction.text import TfidfVectorizer
 
 
 class ArticleCrawler:
     BASE_URL = "https://news.naver.com"
     template_cache = {}  # 템플릿 캐시를 위한 변수
     kiwi = Kiwi()  # Kiwi 형태소 분석기 초기화
+
+    article_categories = {
+        "정치": 100,
+        "경제": 101,
+        "사회": 102,
+        "생활/문화": 103,
+        "IT/과학": 105,
+        "세계": 104,
+        "오피니언": 110,
+        "스포츠": 120,
+        "엔터": 130,
+    }
 
     # 기사 데이터 초기화
     data_template = {
@@ -38,7 +46,7 @@ class ArticleCrawler:
         # "writer": "작성자 확인할 수 없음",
         "publisher": "언론사 확인할 수 없음",
         "category": "카테고리 확인할 수 없음",
-        # "nouns": "명사 확인할 수 없음",
+        "nouns": "명사 확인할 수 없음",
         "published_at": "작성일 확인할 수 없음",
         # "updated_at": "수정일 확인할 수 없음",
         "scraped_at": datetime.now(),
@@ -69,11 +77,6 @@ class ArticleCrawler:
         if not soup:
             return []
 
-        category = next(
-            (tag.text.split(" ")[0] for tag in soup.select("ul.nav > li.on > a")),
-            "카테고리 확인할 수 없음",
-        )
-
         try:
             # 날짜 범위 설정
             start = datetime.strptime(start_date, "%Y%m%d")
@@ -89,10 +92,7 @@ class ArticleCrawler:
 
         # 언론사 링크 생성
         return [
-            {
-                "category_name": category,
-                "publisher_url": f"{self.BASE_URL}{tag['href']}&date={date}",
-            }
+            f"{self.BASE_URL}{tag['href']}&date={date}"
             for date in date_range
             for tag in soup.select("ul.massmedia > li > a")
             if "href" in tag.attrs
@@ -115,7 +115,7 @@ class ArticleCrawler:
         ]
 
     def fetch_news_links_parallel(
-        self, category_name: str, publisher_url: str, date_str: str, max_pages: int = 1
+        self, publisher_url: str, date_str: str, max_pages: int = 10
     ) -> List[Dict[str, str]]:
         def process_page(page):
             return self.fetch_page_links(f"{publisher_url}&page={page}")
@@ -131,7 +131,6 @@ class ArticleCrawler:
                     page_links = future.result()
                     results.extend(
                         {
-                            "category": category_name,
                             "url": link,
                             "published_at": date_str,
                         }
@@ -164,13 +163,12 @@ class ArticleCrawler:
             publisher_links = self.fetch_publisher_links(
                 category_url, start_date, end_date
             )
-            for publisher in tqdm(
+            for publisher_url in tqdm(
                 publisher_links, desc="언론사 수집 중", unit="언론사"
             ):
                 all_links.extend(
                     self.fetch_news_links_parallel(
-                        publisher["category_name"],
-                        publisher["publisher_url"],
+                        publisher_url,
                         start_date,
                     )
                 )
@@ -184,7 +182,6 @@ class ArticleCrawler:
             self.data_template.update(
                 {
                     "url": url,
-                    "category": article_info["category"],
                     "published_at": article_info["published_at"],
                 }
             )
@@ -193,12 +190,22 @@ class ArticleCrawler:
             article.download()
             article.parse()
 
-            content = article.text or self.get_crawling_data(url)["content"]
+            content = article.text
+            final_url = url
+            if not article.text:
+                # Selenium을 사용하여 리다이렉트된 URL 가져오기
+                final_url = self.get_redirected_url(url)
+                article = Article(final_url, language="ko")
+                article.download()
+                article.parse()
+                content = article.text
+                # content = self.get_crawling_data(url)["content"]
             # if not article.text:
             # content = self.get_crawling_data(url)["content"]
             # pass
             published_at = (
-                article.publish_date or self.get_crawling_data(url)["published_at"]
+                article.publish_date
+                or self.get_crawling_data(final_url)["published_at"]
             )
             # if not article.publish_date:
             # published_at = self.get_crawling_data(url)["published_at"]
@@ -206,52 +213,47 @@ class ArticleCrawler:
             #     article.nlp()
             #     self.data_template["summary"] = article.summary
 
+            soup = self.fetch_html(final_url)
+            if soup:
+                # 기사 카테고리 수집
+                category_tag = soup.find("li", class_="is_active")
+                if category_tag:
+                    self.data_template["category"] = self.article_categories[
+                        category_tag.text.strip()
+                    ]
+                    if "sports" in final_url:
+                        self.data_template["category"] = self.article_categories[
+                            "스포츠"
+                        ]
+                    elif "entertain" in final_url:
+                        self.data_template["category"] = self.article_categories["엔터"]
+
+                # 기사 언론사 수집
+                publisher_tag = soup.find("a", class_="media_end_head_top_logo")
+                if publisher_tag:
+                    for img in publisher_tag.find_all("img"):
+                        self.data_template["publisher"] = img.attrs["title"]
+
             self.data_template.update(
                 {
                     "title": article.title,
                     "content": content,
                     "published_at": published_at,
-                    # "nouns": self.extract_nouns(content),
+                    "nouns": self.extract_nouns(content),
                 }
             )
 
             # 기사 ID 추출
-            match = re.search(r"/article(?:/\d+)?/(\d+)", url)
+            match = re.search(r"/article(?:/\d+)?/(\d+)", final_url)
             if match:
                 self.data_template["article_id"] = match.group(1)
-
-            """
-            soup = self.fetch_html(url)
-            if soup:
-                # 기사 작성자 수집
-                writer_tag = soup.find("span", class_="byline_s")
-                if writer_tag is None:
-                    writer_tag = soup.find("span", class_="NewsEndMain_author__sl+2K")
-
-                if writer_tag is not None:
-                    self.data_template["writer"] = writer_tag.text.strip()
-            #     # 언론사 수집
-            #     publisher_tag = soup.find("meta", property="og:article:author")
-            #     if publisher_tag:
-            #         full_publisher = publisher_tag.get("content")
-            #         if full_publisher:
-            #             # 언론사 명만 가져오기
-            #             self.data_template["publisher"] = full_publisher.split("|")[0].strip()
-
-            #     # 기사 작성일 수집
-            #     published_at_tag = soup.find("span", class_="t11")
-            #     if published_at_tag:
-            #         self.data_template["published_at"] = published_at_tag.text
-
-            #     # 기사 수정일 수집 (존재할 경우)
-            #     updated_at_tag = soup.find("span", class_="t11_2")
-            #     if updated_at_tag:
-            #         self.data_template["updated_at"] = updated_at_tag.text
-            """
-
             return self.data_template.copy()
         except Exception as e:
             logger.error(f"기사 본문 처리 중 에러 발생 {article_info['url']}: {e}")
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            logger.critical(
+                "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            )
             return None
 
     def fetch_articles(self, article_links: List[str]) -> List[Dict[str, str]]:
@@ -268,52 +270,17 @@ class ArticleCrawler:
             )
         return [article for article in articles if article]
 
-    """
-    def get_crawling_data(self, url: str):
+    def get_redirected_url(self, url: str):
         driver = DriverUtils.get_driver()
-        crawling_data = {"content": "", "published_at": ""}
-
         try:
             driver.get(url)
-            content_url = driver.current_url
-
-            # 기사 본문 템플릿 호출
-            template = self.get_template_with_cache(
-                content_url, get_content_template, content_url
-            )
-            if not template:
-                logger.error(f"템플릿을 찾을 수 없습니다: {url}")
-                return crawling_data
-
-            content_element = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located(
-                    (By.CLASS_NAME, template["content_selector"])
-                )
-            )
-            crawling_data["content"] = content_element.find_element(
-                By.TAG_NAME, "article"
-            ).text
-
-            date_elements = driver.find_elements(
-                By.CLASS_NAME, template["date_selector"]
-            )
-            for date in date_elements:
-                date_element = (
-                    date.find_elements(By.TAG_NAME, "span")
-                    if template["site"] == "n.news.naver.com"
-                    else date.find_elements(By.TAG_NAME, "em")
-                )
-                published_at = (
-                    (date_element[0].get_attribute(template["date_attribute"]))
-                    .replace("오전", "AM")
-                    .replace("오후", "PM")
-                )
-            crawling_data["published_at"] = published_at
-            return crawling_data
+            redirected_url = driver.current_url
+            return redirected_url
         except Exception as e:
-            logger.error(f"본문 크롤링 작업 중 오류 (Selenium) {url}: {str(e)}")
-            return crawling_data
-    """
+            logger.error(f"URL 리다이렉트 중 오류: {e}")
+            return url
+        finally:
+            driver.quit()
 
     def get_crawling_data(self, url: str):
         crawling_data = {"content": "", "published_at": ""}
@@ -364,13 +331,11 @@ class ArticleCrawler:
             self.template_cache[cache_key] = template
         return template
 
-    """
     def extract_nouns(self, content: str) -> List[str]:
         if not content:
             return []
         tokens = self.kiwi.analyze(content)[0][0]
         return [token[0] for token in tokens if token[1].startswith("NN")]
-    """
 
     """
     def extract_keywords_using_tfidf(self, articles: List[Dict[str, str]]):
