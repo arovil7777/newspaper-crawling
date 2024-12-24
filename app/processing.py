@@ -1,4 +1,6 @@
 import os
+import traceback
+import sys
 from app.utils.db_handler import MongoDBConnector
 from app.utils.csv_handler import save_to_csv, load_from_csv
 from app.utils.json_handler import save_to_json, load_from_json
@@ -112,10 +114,10 @@ def send_to_hdfs(local_file_path):
 
 def send_to_hbase(hdfs_path, local_path):
     try:
-        # HDFS에서 파일 다운로드
-        hdfs_connector = HDFSConnector()
-        hdfs_connector.client.download(hdfs_path, local_path, overwrite=True)
-        logger.info(f"HDFS에서 파일 다운로드 완료: {local_path}")
+        # # HDFS에서 파일 다운로드
+        # hdfs_connector = HDFSConnector()
+        # hdfs_connector.client.download(hdfs_path, local_path, overwrite=True)
+        # logger.info(f"HDFS에서 파일 다운로드 완료: {local_path}")
 
         # HBase에 파일 삽입
         hbase_connector = HBaseConnector()
@@ -128,6 +130,18 @@ def send_to_hbase(hdfs_path, local_path):
         hbase_connector.close_connection()
     except Exception as e:
         logger.error(f"HBase로 데이터 전송 중 오류 발생: {e}")
+
+
+def get_row_from_hbase(table_name):  # , row_key):
+    try:
+        hbase_connector = HBaseConnector()
+        # row = hbase_connector.get_row(table_name, row_key)
+        row = hbase_connector.get_table_data(table_name)
+        hbase_connector.close_connection()
+        return row
+    except Exception as e:
+        logger.error(f"HBase에서 데이터 조회 중 오류 발생: {e}")
+        return None
 
 
 def hbase_data_to_hdfs(table_name, output_path):

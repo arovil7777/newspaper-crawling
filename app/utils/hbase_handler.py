@@ -1,6 +1,9 @@
 import happybase
 import csv
+import pandas as pd
 import json
+import traceback
+import sys
 from app.config import Config, logger
 
 
@@ -8,7 +11,7 @@ class HBaseConnector:
     def __init__(self, host=Config.HBASE_HOST, port=Config.HBASE_PORT):
         # HBase 연결 설정
         try:
-            self.connection = happybase.Connection(host=host, port=port)
+            self.connection = happybase.Connection(host=host, port=int(port))
             self.connection.open()
             logger.info(f"HBase 연결 성공: {host}:{port}")
         except Exception as e:
@@ -23,18 +26,33 @@ class HBaseConnector:
         # CSV 파일을 읽어 HBase 테이블에 삽입
         try:
             table = self.get_table(table_name)
-            # 모든
-            with open(csv_path, "r", encoding="utf-8-sig") as file:
-                reader = csv.DictReader(file)
-                for row in reader:
-                    row_key = row["id"]
-                    data = {f"info:{k}": v for k, v in row.items()}
-                    table.put(row_key, data)
+            df = pd.read_csv(csv_path, encoding="utf-8-sig")
+            df = df.fillna("")  # 모든 NaN 값을 빈 문자열로 대체
+            df = df.astype(str)  # HBase에 삽입하기 위해 모든 데이터를 문자열로 변환
+
+            for _, row in df.iterrows():
+                if pd.isna(row["article_id"]):
+                    continue
+
+                row_key = str(row["article_id"])
+                hbase_data = {
+                    (
+                        f"article:{k}"
+                        if k in ["site", "title", "url", "publisher"]
+                        else f"article_content:{k}"
+                    ): str(v)
+                    for k, v in row.items()
+                }
+                table.put(row_key, hbase_data)
             logger.info(
                 f"CSV 데이터를 HBase 테이블 '{table_name}'에 성공적으로 삽입했습니다."
             )
         except Exception as e:
             logger.error(f"CSV 데이터를 HBase 테이블로 삽입 중 오류 발생: {e}")
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            logger.critical(
+                "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            )
 
     def insert_json_to_table(self, table_name, json_path):
         # JSON 파일을 읽어 HBase 테이블에 삽입
@@ -43,14 +61,49 @@ class HBaseConnector:
             with open(json_path, "r", encoding="utf-8-sig") as file:
                 data = json.load(file)
                 for item in data:
-                    row_key = item["id"]
-                    hbase_data = {f"info:{k}": str(v) for k, v in item.items()}
+                    row_key = str(item["article_id"])
+                    hbase_data = {
+                        (
+                            f"article:{k}"
+                            if k in ["site", "title", "url", "publisher"]
+                            else f"article_content:{k}"
+                        ): str(v)
+                        for k, v in item.items()
+                    }
                     table.put(row_key, hbase_data)
             logger.info(
                 f"JSON 데이터를 HBase 테이블 '{table_name}'에 성공적으로 삽입했습니다."
             )
         except Exception as e:
             logger.error(f"JSON 데이터를 HBase 테이블로 삽입 중 오류 발생: {e}")
+
+    def get_row(self, table_name, row_key):
+        # HBase 테이블에서 주어진 row key로 데이터 조회
+        try:
+            table = self.get_table(table_name)
+            row = table.row(row_key)
+            if row:
+                logger.info(f"Row key '{row_key}'로 조회한 데이터: {row}")
+                return row
+            else:
+                logger.warning(f"Row key '{row_key}'로 조회한 데이터가 없습니다.")
+                return None
+        except Exception as e:
+            logger.error(f"Row key '{row_key}'로 데이터 조회 중 오류 발생: {e}")
+            return None
+
+    def get_table_data(self, table_name):
+        table = self.get_table(table_name)
+        try:
+            for key, row in table.scan():
+                decoded_key = key.decode("utf-8")
+                decoded_row = {
+                    k.decode("utf-8"): v.decode("utf-8") for k, v in row.items()
+                }
+                logger.info(f"Row Key: {decoded_key}, Row Data: {decoded_row}")
+                logger.info("HBase 테이블 선택 성공")
+        except Exception as e:
+            logger.error(f"테이블 스캔 중 에커 발생: {e}")
 
     def close_connection(self):
         # HBase 연결 종료

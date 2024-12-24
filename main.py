@@ -2,13 +2,14 @@ import traceback
 import sys
 from datetime import datetime, timedelta
 from app.crawling import ArticleCrawler
-from app.config import logger
+from app.config import Config, logger
 from app.processing import (
     save_articles_to_db,
     save_articles_to_csv,
     save_articles_to_json,
     send_to_hdfs,
     send_to_hbase,
+    get_row_from_hbase,
 )
 
 
@@ -48,8 +49,8 @@ def main():
     )
 
     # 기간 설정
-    start_date = "20241208"  # 시작 날짜 (YYYYMMDD 형식)
-    end_date = "20241214"  # 종료 날짜 (YYYYMMDD 형식)
+    start_date = "20241215"  # 시작 날짜 (YYYYMMDD 형식)
+    end_date = "20241221"  # 종료 날짜 (YYYYMMDD 형식)
 
     crawler = ArticleCrawler()
     all_articles = []  # 크롤링한 전체 기사 데이터
@@ -83,20 +84,23 @@ def main():
 
             if all_articles:
                 # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
-                local_file_path = save_data_format("CSV", articles, date=start)
-                """
-                # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
+                local_file_paths = save_data_format("CSV", articles, date=start)
+                # # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 
-                # 2. CSV 데이터를 HBase로 저장
-                # if local_file_path:
-                #     send_to_hbase(local_file_path, Config.TABLE_NAME)
+                # # 2. CSV 데이터를 HBase로 저장
+                # if local_file_paths:
+                #     for local_file_path in local_file_paths:
+                #         send_to_hbase(None, local_file_path)
                 # # HDFS로 전송
                 # hdfs_file_path = send_to_hdfs(local_file_path)
 
                 # # HDFS에서 HBase로 전송
                 # if hdfs_file_path:
                 #     send_to_hbase(hdfs_file_path, local_file_path)
-                """
+
+                # # HBase에서 데이터 조회
+                # if articles:
+                #     get_row_from_hbase(Config.TABLE_NAME)
             else:
                 logger.warning(f"{start}부터 {end}까지 크롤링된 기사가 없습니다.")
                 continue
