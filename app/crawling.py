@@ -1,15 +1,16 @@
 import requests
 from bs4 import BeautifulSoup
 from newspaper import Article
-from app.utils.driver_handler import DriverUtils
 from app.templates.template_select import get_content_template
 from kiwipiepy import Kiwi
-from typing import List, Dict
+from typing import Tuple, List, Dict
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from app.config import logger
 from datetime import datetime, timedelta
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 import certifi
 import re
 import traceback
@@ -46,21 +47,33 @@ class ArticleCrawler:
         # "writer": "작성자 확인할 수 없음",
         "publisher": "언론사 확인할 수 없음",
         "category": "카테고리 확인할 수 없음",
-        "nouns": "명사 확인할 수 없음",
+        "nouns": "형태소 분석 확인할 수 없음",
         "published_at": "작성일 확인할 수 없음",
         # "updated_at": "수정일 확인할 수 없음",
         "scraped_at": datetime.now(),
     }
 
-    def fetch_html(self, url: str) -> BeautifulSoup:
+    def fetch_html(self, url: str) -> Tuple[BeautifulSoup, str]:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
         try:
-            response = requests.get(url, verify=certifi.where(), timeout=10)
+            session = requests.Session()
+            retry = Retry(
+                total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504]
+            )
+            adapter = HTTPAdapter(max_retries=retry)
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
+
+            response = session.get(url, verify=certifi.where(), timeout=20)
             response.raise_for_status()
-            return BeautifulSoup(response.text, "html.parser")
+            return BeautifulSoup(response.text, "html.parser"), response.url
         except requests.RequestException as e:
             logger.error(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
-            return None
+            exc_type, exc_value, exc_tb = sys.exc_info()
+            logger.critical(
+                "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+            )
+            return None, url
 
     def parse_category_links(self, soup: BeautifulSoup) -> List[str]:
         return [
@@ -73,7 +86,7 @@ class ArticleCrawler:
         self, category_url: str, start_date: str, end_date: str
     ) -> List[Dict[str, str]]:
         # 카테고리 URL에서 언론사 링크 추출
-        soup = self.fetch_html(category_url)
+        soup, _ = self.fetch_html(category_url)
         if not soup:
             return []
 
@@ -99,7 +112,7 @@ class ArticleCrawler:
         ]
 
     def fetch_page_links(self, paginated_url: str) -> List[str]:
-        soup = self.fetch_html(paginated_url)
+        soup, _ = self.fetch_html(paginated_url)
         if not soup:
             return []
 
@@ -145,7 +158,7 @@ class ArticleCrawler:
         self, all_publisher_url: str, start_date: str, end_date: str
     ) -> List[Dict[str, str]]:
         # 사이트 추출
-        soup = self.fetch_html(all_publisher_url)
+        soup, _ = self.fetch_html(all_publisher_url)
         if not soup:
             return []
 
@@ -186,34 +199,19 @@ class ArticleCrawler:
                 }
             )
 
-            article = Article(url, language="ko")
+            soup, final_url = self.fetch_html(url)
+            article = Article(final_url, language="ko")
             article.download()
             article.parse()
 
-            content = article.text
-            final_url = url
-            if not article.text:
-                # Selenium을 사용하여 리다이렉트된 URL 가져오기
-                final_url = self.get_redirected_url(url)
-                article = Article(final_url, language="ko")
-                article.download()
-                article.parse()
-                content = article.text
-                # content = self.get_crawling_data(url)["content"]
-            # if not article.text:
-            # content = self.get_crawling_data(url)["content"]
-            # pass
+            content = article.text or self.get_crawling_data(final_url)["content"]
             published_at = (
                 article.publish_date
                 or self.get_crawling_data(final_url)["published_at"]
             )
-            # if not article.publish_date:
-            # published_at = self.get_crawling_data(url)["published_at"]
-            # pass
-            #     article.nlp()
-            #     self.data_template["summary"] = article.summary
 
-            soup = self.fetch_html(final_url)
+            # 기사 제목
+            title = article.title
             if soup:
                 # 기사 카테고리 수집
                 category_tag = soup.find("li", class_="is_active")
@@ -221,12 +219,11 @@ class ArticleCrawler:
                     self.data_template["category"] = self.article_categories[
                         category_tag.text.strip()
                     ]
-                    if "sports" in final_url:
-                        self.data_template["category"] = self.article_categories[
-                            "스포츠"
-                        ]
-                    elif "entertain" in final_url:
-                        self.data_template["category"] = self.article_categories["엔터"]
+
+                if "sports" in final_url:
+                    self.data_template["category"] = self.article_categories["스포츠"]
+                elif "entertain" in final_url:
+                    self.data_template["category"] = self.article_categories["엔터"]
 
                 # 기사 언론사 수집
                 publisher_tag = soup.find("a", class_="media_end_head_top_logo")
@@ -234,9 +231,15 @@ class ArticleCrawler:
                     for img in publisher_tag.find_all("img"):
                         self.data_template["publisher"] = img.attrs["title"]
 
+                if not article.title or title in [
+                    "뉴스 : 네이버스포츠",
+                    "뉴스 : 네이버 엔터",
+                ]:
+                    title = self.get_crawling_data(final_url)["title"]
+
             self.data_template.update(
                 {
-                    "title": article.title,
+                    "title": title,
                     "content": content,
                     "published_at": published_at,
                     "nouns": self.extract_nouns(content),
@@ -270,38 +273,40 @@ class ArticleCrawler:
             )
         return [article for article in articles if article]
 
-    def get_redirected_url(self, url: str):
-        driver = DriverUtils.get_driver()
-        try:
-            driver.get(url)
-            redirected_url = driver.current_url
-            return redirected_url
-        except Exception as e:
-            logger.error(f"URL 리다이렉트 중 오류: {e}")
-            return url
-        finally:
-            driver.quit()
-
     def get_crawling_data(self, url: str):
-        crawling_data = {"content": "", "published_at": ""}
+        crawling_data = {"title": "", "content": "", "published_at": ""}
 
         try:
-            soup = self.fetch_html(url)
+            soup, final_url = self.fetch_html(url)
             if not soup:
                 return crawling_data
 
             # 기사 본문 템플릿 호출
-            template = self.get_template_with_cache(url, get_content_template, url)
+            template = self.get_template_with_cache(
+                final_url, get_content_template, final_url
+            )
             if not template:
-                logger.error(f"템플릿을 찾을 수 없습니다: {url}")
+                logger.error(f"템플릿을 찾을 수 없습니다: {final_url}")
                 return crawling_data
+
+            title_element = soup.select_one(f".{template['title_selector']}")
+            if title_element:
+                crawling_data["title"] = title_element.get_text()
 
             content_element = soup.select_one(f".{template['content_selector']}")
             if content_element:
-                crawling_data["content"] = content_element.get_text(strip=True)
+                crawling_data["content"] = content_element.find("article").get_text(
+                    strip=True
+                )
 
-            date_elements = soup.select(f".{template['date_selector']}")
-            for date_element in date_elements:
+            date_element = next(
+                (
+                    date_element
+                    for date_element in soup.select(f".{template['date_selector']}")
+                ),
+                None,
+            )
+            if date_element:
                 date = (
                     date_element.find("span")
                     if template["site"] == "n.news.naver.com"
@@ -314,7 +319,6 @@ class ArticleCrawler:
                 )
                 if date_text:
                     crawling_data["published_at"] = date_text
-                    break
 
             return crawling_data
         except Exception as e:

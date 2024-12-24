@@ -2,6 +2,7 @@
 CONTENT_TEMPLATES = [
     {
         "site": "n.news.naver.com",
+        "title_selector": "media_end_head_headline",
         "article_id_selector": "return article.articleId",
         "content_selector": "newsct_wrapper",
         "writer_selector": ["media_and_head_jounalist_name", "byline_p"],
@@ -11,6 +12,7 @@ CONTENT_TEMPLATES = [
     },
     {
         "site": "m.entertain.naver.com",
+        "title_selector": "NewsEndMain_article_title__kqEzS",
         "article_id_selector": "",
         "content_selector": "NewsEnd_news_end__AzcQj",
         "writer_selector": ["NewsEndMain_article_journalist_info__Cdr3D"],
@@ -20,6 +22,7 @@ CONTENT_TEMPLATES = [
     },
     {
         "site": "m.sports.naver.com",
+        "title_selector": "NewsEndMain_article_title__kqEzS",
         "article_id_selector": "",
         "content_selector": "NewsEnd_news_end__AzcQj",
         "writer_selector": ["NewsEndMain_article_journalist_info__Cdr3D"],
