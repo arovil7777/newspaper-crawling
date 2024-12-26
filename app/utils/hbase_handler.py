@@ -11,7 +11,7 @@ class HBaseConnector:
     def __init__(self, host=Config.HBASE_HOST, port=Config.HBASE_PORT):
         # HBase 연결 설정
         try:
-            self.connection = happybase.Connection(host=host, port=int(port))
+            self.connection = happybase.Connection(host=host, port=port)
             self.connection.open()
             logger.info(f"HBase 연결 성공: {host}:{port}")
         except Exception as e:
@@ -48,7 +48,7 @@ class HBaseConnector:
                 f"CSV 데이터를 HBase 테이블 '{table_name}'에 성공적으로 삽입했습니다."
             )
         except Exception as e:
-            logger.error(f"CSV 데이터를 HBase 테이블로 삽입 중 오류 발생: {e}")
+            logger.error(f"CSV 데이터를 HBase 테이블로 삽입 중 에러 발생: {e}")
             exc_type, exc_value, exc_tb = sys.exc_info()
             logger.critical(
                 "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
@@ -75,7 +75,7 @@ class HBaseConnector:
                 f"JSON 데이터를 HBase 테이블 '{table_name}'에 성공적으로 삽입했습니다."
             )
         except Exception as e:
-            logger.error(f"JSON 데이터를 HBase 테이블로 삽입 중 오류 발생: {e}")
+            logger.error(f"JSON 데이터를 HBase 테이블로 삽입 중 에러 발생: {e}")
 
     def get_row(self, table_name, row_key):
         # HBase 테이블에서 주어진 row key로 데이터 조회
@@ -89,7 +89,7 @@ class HBaseConnector:
                 logger.warning(f"Row key '{row_key}'로 조회한 데이터가 없습니다.")
                 return None
         except Exception as e:
-            logger.error(f"Row key '{row_key}'로 데이터 조회 중 오류 발생: {e}")
+            logger.error(f"Row key '{row_key}'로 데이터 조회 중 에러 발생: {e}")
             return None
 
     def get_table_data(self, table_name):
@@ -103,7 +103,7 @@ class HBaseConnector:
                 logger.info(f"Row Key: {decoded_key}, Row Data: {decoded_row}")
                 logger.info("HBase 테이블 선택 성공")
         except Exception as e:
-            logger.error(f"테이블 스캔 중 에커 발생: {e}")
+            logger.error(f"테이블 스캔 중 에러 발생: {e}")
 
     def close_connection(self):
         # HBase 연결 종료

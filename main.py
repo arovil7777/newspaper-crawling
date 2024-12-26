@@ -49,8 +49,8 @@ def main():
     )
 
     # 기간 설정
-    start_date = "20241215"  # 시작 날짜 (YYYYMMDD 형식)
-    end_date = "20241221"  # 종료 날짜 (YYYYMMDD 형식)
+    start_date = "20241201"  # 시작 날짜 (YYYYMMDD 형식)
+    end_date = "20241207"  # 종료 날짜 (YYYYMMDD 형식)
 
     crawler = ArticleCrawler()
     all_articles = []  # 크롤링한 전체 기사 데이터
@@ -87,10 +87,10 @@ def main():
                 local_file_paths = save_data_format("CSV", articles, date=start)
                 # # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 
-                # # 2. CSV 데이터를 HBase로 저장
-                # if local_file_paths:
-                #     for local_file_path in local_file_paths:
-                #         send_to_hbase(None, local_file_path)
+                # 2. CSV 데이터를 HBase로 저장
+                if local_file_paths:
+                    for local_file_path in local_file_paths:
+                        send_to_hbase(None, local_file_path)
                 # # HDFS로 전송
                 # hdfs_file_path = send_to_hdfs(local_file_path)
 
@@ -107,10 +107,7 @@ def main():
         logger.info("작업이 완료되었습니다.")
     except Exception as e:
         logger.critical(f"예기치 못한 에러 발생: {e}")
-        exc_type, exc_value, exc_tb = sys.exc_info()
-        logger.critical(
-            "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-        )
+        logger.error(traceback.format_exc())
 
 
 if __name__ == "__main__":

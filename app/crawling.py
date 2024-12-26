@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from newspaper import Article
+from newspaper import Article, Config
 from app.templates.template_select import get_content_template
 from kiwipiepy import Kiwi
 from typing import Tuple, List, Dict
@@ -56,24 +56,28 @@ class ArticleCrawler:
     def fetch_html(self, url: str) -> Tuple[BeautifulSoup, str]:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
         try:
-            session = requests.Session()
-            retry = Retry(
-                total=5, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504]
-            )
-            adapter = HTTPAdapter(max_retries=retry)
-            session.mount("http://", adapter)
-            session.mount("https://", adapter)
-
-            response = session.get(url, verify=certifi.where(), timeout=20)
+            response = requests.get(url, verify=certifi.where(), timeout=10)
             response.raise_for_status()
             return BeautifulSoup(response.text, "html.parser"), response.url
         except requests.RequestException as e:
             logger.error(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
-            exc_type, exc_value, exc_tb = sys.exc_info()
-            logger.critical(
-                "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-            )
-            return None, url
+
+            # 예외 발생 시 원문 URL을 가져와서 다시 시도 (네이버 엔터, 스포츠 등에서 주로 발생)
+            origin_url = self.get_origin_url(url)
+            if origin_url:
+                try:
+                    response = requests.get(
+                        origin_url, verify=certifi.where(), timeout=10
+                    )
+                    response.raise_for_status()
+                    return BeautifulSoup(response.text, "html.parser"), response.url
+                except requests.RequestException as e:
+                    logger.error(
+                        f"원문 URL에서 HTML 가져오기 중 에러 발생 {origin_url}: {e}"
+                    )
+                    return None, url
+            else:
+                return None, url
 
     def parse_category_links(self, soup: BeautifulSoup) -> List[str]:
         return [
@@ -150,7 +154,7 @@ class ArticleCrawler:
                         for link in page_links
                     )
                 except Exception as e:
-                    logger.error(f"페이지 크롤링 중 오류: {e}")
+                    logger.error(f"페이지 크롤링 중 에러: {e}")
 
         return results
 
@@ -200,18 +204,22 @@ class ArticleCrawler:
             )
 
             soup, final_url = self.fetch_html(url)
+            if not soup:
+                logger.error(f"HTML을 가져올 수 없습니다: {url}")
+                return None
+
             article = Article(final_url, language="ko")
             article.download()
             article.parse()
 
             content = article.text or self.get_crawling_data(final_url)["content"]
-            published_at = (
-                article.publish_date
-                or self.get_crawling_data(final_url)["published_at"]
-            )
-
-            # 기사 제목
             title = article.title
+            if not title or title in [
+                "뉴스 : 네이버스포츠",
+                "뉴스 : 네이버 엔터",
+            ]:
+                title = self.get_crawling_data(final_url)["title"]
+
             if soup:
                 # 기사 카테고리 수집
                 category_tag = soup.find("li", class_="is_active")
@@ -231,17 +239,12 @@ class ArticleCrawler:
                     for img in publisher_tag.find_all("img"):
                         self.data_template["publisher"] = img.attrs["title"]
 
-                if not article.title or title in [
-                    "뉴스 : 네이버스포츠",
-                    "뉴스 : 네이버 엔터",
-                ]:
-                    title = self.get_crawling_data(final_url)["title"]
-
             self.data_template.update(
                 {
                     "title": title,
                     "content": content,
-                    "published_at": published_at,
+                    "published_at": article.publish_date
+                    or self.get_crawling_data(final_url)["published_at"],
                     "nouns": self.extract_nouns(content),
                 }
             )
@@ -253,25 +256,28 @@ class ArticleCrawler:
             return self.data_template.copy()
         except Exception as e:
             logger.error(f"기사 본문 처리 중 에러 발생 {article_info['url']}: {e}")
-            exc_type, exc_value, exc_tb = sys.exc_info()
-            logger.critical(
-                "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-            )
             return None
 
     def fetch_articles(self, article_links: List[str]) -> List[Dict[str, str]]:
         # 멀티 프로세싱으로 기사 본문 내용 추출
-        num_workers = min(len(article_links), cpu_count() * 2)
-        with Pool(processes=num_workers) as pool:
-            articles = list(
-                tqdm(
-                    pool.imap(self.fetch_article, article_links),
-                    total=len(article_links),
-                    desc="기사 본문 크롤링 진행 중",
-                    colour="green",
+        num_workers = min(len(article_links), max(1, cpu_count() - 2))
+        try:
+            with Pool(processes=num_workers) as pool:
+                articles = list(
+                    tqdm(
+                        pool.imap(self.fetch_article, article_links),
+                        total=len(article_links),
+                        desc="기사 본문 크롤링 진행 중",
+                        colour="green",
+                    )
                 )
-            )
-        return [article for article in articles if article]
+            return [article for article in articles if article]
+        except BrokenPipeError as e:
+            logger.error(f"BrokenPipeError 발생: {e}")
+            return []
+        except Exception as e:
+            logger.error(f"예기치 않은 에러 발생: {e}")
+            return []
 
     def get_crawling_data(self, url: str):
         crawling_data = {"title": "", "content": "", "published_at": ""}
@@ -322,23 +328,35 @@ class ArticleCrawler:
 
             return crawling_data
         except Exception as e:
-            logger.error(f"본문 크롤링 작업 중 오류 {url}: {str(e)}")
+            logger.error(f"본문 크롤링 작업 중 에러 {url}: {str(e)}")
             return crawling_data
+
+    def get_origin_url(self, url: str) -> str:
+        try:
+            response = requests.get(url, verify=certifi.where(), timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # 기사 원문 URL 추출
+            origin_url_element = soup.select_one("a[class*='link_origin_article']")
+            if origin_url_element:
+                return origin_url_element.get("href", "")
+            else:
+                return ""
+        except Exception as e:
+            logger.error(f"기사 원문 URL 추출 중 에러: {e}")
+            return ""
 
     def get_template_with_cache(self, cache_key, fetch_function, *args):
         # 캐시를 활용한 템플릿 조회
-        if cache_key in self.template_cache:
-            return self.template_cache[cache_key]
-
-        template = fetch_function(*args)
-        if template:
-            self.template_cache[cache_key] = template
-        return template
+        if cache_key not in self.template_cache:
+            self.template_cache[cache_key] = fetch_function(*args)
+        return self.template_cache[cache_key]
 
     def extract_nouns(self, content: str) -> List[str]:
         if not content:
             return []
-        tokens = self.kiwi.analyze(content)[0][0]
+        tokens = self.kiwi.analyze(content, top_n=1)[0][0]
         return [token[0] for token in tokens if token[1].startswith("NN")]
 
     """

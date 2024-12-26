@@ -18,7 +18,7 @@ class HDFSConnector:
             self.client.upload(hdfs_path, local_path, overwrite=True)
             logger.info(f"파일이 성공적으로 HDFS에 업로드되었습니다: {hdfs_path}")
         except Exception as e:
-            logger.error(f"HDFS 파일 업로드 중 오류 발생: {e}")
+            logger.error(f"HDFS 파일 업로드 중 에러 발생: {e}")
 
     def close_connection(self):
         logger.info("HDFS 작업 완료")  # HDFS는 명시적으로 닫을 필요가 없다고 함

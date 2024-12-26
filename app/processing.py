@@ -30,7 +30,7 @@ def save_articles_to_db(data, collection_name=Config.CRAWLING_COLLECTION):
 
         logger.info(f"{len(data)}개의 데이터 저장 완료")
     except Exception as e:
-        logger.error(f"MongoDB 저장 중 오류 발생: {e}")
+        logger.error(f"MongoDB 저장 중 에러 발생: {e}")
     finally:
         db.close_connection()
 
@@ -49,7 +49,7 @@ def save_articles_to_csv(data, date_str):
         logger.info(f"로컬에 CSV 파일 저장 완료: {file_path}")
         file_paths.append(file_path)
     except Exception as e:
-        logger.error(f"CSV 저장 중 오류 발생: {e}")
+        logger.error(f"CSV 저장 중 에러 발생: {e}")
 
     return file_paths
 
@@ -59,7 +59,7 @@ def load_articles_from_csv(file_path):
     try:
         return load_from_csv(file_path)
     except Exception as e:
-        logger.error(f"CSV 로드 중 오류 발생: {e}")
+        logger.error(f"CSV 로드 중 에러 발생: {e}")
         return []
 
 
@@ -77,7 +77,7 @@ def save_articles_to_json(data, date_str):
         logger.info(f"로컬에 JSON 파일 저장 완료: {file_path}")
         file_paths.append(file_path)
     except Exception as e:
-        logger.error(f"JSON 저장 중 오류 발생: {e}")
+        logger.error(f"JSON 저장 중 에러 발생: {e}")
 
     return file_paths
 
@@ -87,7 +87,7 @@ def load_articles_from_json(file_path):
     try:
         return load_from_json(file_path)
     except Exception as e:
-        logger.error(f"JSON 로드 중 오류 발생: {e}")
+        logger.error(f"JSON 로드 중 에러 발생: {e}")
         return []
 
 
@@ -108,7 +108,7 @@ def send_to_hdfs(local_file_path):
         # 업로드된 HDFS 경로 반환
         return hdfs_file_path
     except Exception as e:
-        logger.error(f"HDFS 전송 중 오류 발생: {e}")
+        logger.error(f"HDFS 전송 중 에러 발생: {e}")
         return None
 
 
@@ -129,7 +129,7 @@ def send_to_hbase(hdfs_path, local_path):
             logger.error("지원하지 않는 파일 형식입니다. CSV 또는 JSON을 지원합니다.")
         hbase_connector.close_connection()
     except Exception as e:
-        logger.error(f"HBase로 데이터 전송 중 오류 발생: {e}")
+        logger.error(f"HBase로 데이터 전송 중 에러 발생: {e}")
 
 
 def get_row_from_hbase(table_name):  # , row_key):
@@ -140,7 +140,7 @@ def get_row_from_hbase(table_name):  # , row_key):
         hbase_connector.close_connection()
         return row
     except Exception as e:
-        logger.error(f"HBase에서 데이터 조회 중 오류 발생: {e}")
+        logger.error(f"HBase에서 데이터 조회 중 에러 발생: {e}")
         return None
 
 
