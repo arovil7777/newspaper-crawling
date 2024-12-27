@@ -1,10 +1,9 @@
 import happybase
-import csv
 import pandas as pd
 import json
 import traceback
-import sys
 from app.config import Config, logger
+from tqdm import tqdm
 
 
 class HBaseConnector:
@@ -30,7 +29,9 @@ class HBaseConnector:
             df = df.fillna("")  # 모든 NaN 값을 빈 문자열로 대체
             df = df.astype(str)  # HBase에 삽입하기 위해 모든 데이터를 문자열로 변환
 
-            for _, row in df.iterrows():
+            for _, row in tqdm(
+                df.iterrows(), total=df.shape[0], desc="HBase로 데이터 저장 중"
+            ):
                 if pd.isna(row["article_id"]):
                     continue
 
@@ -62,7 +63,7 @@ class HBaseConnector:
             table = self.get_table(table_name)
             with open(json_path, "r", encoding="utf-8-sig") as file:
                 data = json.load(file)
-                for item in data:
+                for item in tqdm(data, desc="HBase로 데이터 저장 중"):
                     row_key = str(item["article_id"])
 
                     # 중복 여부 확인
