@@ -2,7 +2,7 @@ import os
 import traceback
 import sys
 from app.utils.db_handler import MongoDBConnector
-from app.utils.csv_handler import save_to_csv, load_from_csv
+from app.utils.csv_handler import save_to_csv, load_from_csv, append_to_csv
 from app.utils.json_handler import save_to_json, load_from_json
 from app.utils.hdfs_handler import HDFSConnector
 from app.utils.hbase_handler import HBaseConnector
@@ -45,7 +45,7 @@ def save_articles_to_csv(data, date_str):
     data_dir_with_date = create_data_dir_with_date(date_str)
     file_path = os.path.join(data_dir_with_date, f"articles_{date_str}.csv")
     try:
-        save_to_csv(data, file_path)
+        append_to_csv(data, file_path)
         logger.info(f"로컬에 CSV 파일 저장 완료: {file_path}")
         file_paths.append(file_path)
     except Exception as e:

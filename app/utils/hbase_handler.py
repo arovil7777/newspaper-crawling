@@ -35,6 +35,11 @@ class HBaseConnector:
                     continue
 
                 row_key = str(row["article_id"])
+
+                # 중복 여부 확인
+                if table.row(row_key):
+                    continue
+
                 hbase_data = {
                     (
                         f"article:{k}"
@@ -49,10 +54,7 @@ class HBaseConnector:
             )
         except Exception as e:
             logger.error(f"CSV 데이터를 HBase 테이블로 삽입 중 에러 발생: {e}")
-            exc_type, exc_value, exc_tb = sys.exc_info()
-            logger.critical(
-                "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-            )
+            logger.error(traceback.format_exc())
 
     def insert_json_to_table(self, table_name, json_path):
         # JSON 파일을 읽어 HBase 테이블에 삽입
@@ -62,6 +64,11 @@ class HBaseConnector:
                 data = json.load(file)
                 for item in data:
                     row_key = str(item["article_id"])
+
+                    # 중복 여부 확인
+                    if table.row(row_key):
+                        continue
+
                     hbase_data = {
                         (
                             f"article:{k}"

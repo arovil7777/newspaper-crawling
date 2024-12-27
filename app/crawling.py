@@ -260,7 +260,7 @@ class ArticleCrawler:
 
     def fetch_articles(self, article_links: List[str]) -> List[Dict[str, str]]:
         # 멀티 프로세싱으로 기사 본문 내용 추출
-        num_workers = min(len(article_links), max(1, cpu_count() - 2))
+        num_workers = min(len(article_links), cpu_count() * 2)
         try:
             with Pool(processes=num_workers) as pool:
                 articles = list(
