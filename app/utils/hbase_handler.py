@@ -25,31 +25,38 @@ class HBaseConnector:
         # CSV 파일을 읽어 HBase 테이블에 삽입
         try:
             table = self.get_table(table_name)
-            df = pd.read_csv(csv_path, encoding="utf-8-sig")
-            df = df.fillna("")  # 모든 NaN 값을 빈 문자열로 대체
-            df = df.astype(str)  # HBase에 삽입하기 위해 모든 데이터를 문자열로 변환
-
-            for _, row in tqdm(
-                df.iterrows(), total=df.shape[0], desc="HBase로 데이터 저장 중"
+            chunk_size = 1000  # 청크 크기 설정 (메모리 이슈)
+            for chunk in pd.read_csv(
+                csv_path,
+                encoding="utf-8-sig",
+                chunksize=chunk_size,
             ):
-                if pd.isna(row["article_id"]):
-                    continue
+                chunk = chunk.fillna("")  # 모든 NaN 값을 빈 문자열로 대체
+                chunk = chunk.astype(str)  # HBase에 삽입하기 위해 모든 데이터를 문자열로 변환
 
-                row_key = str(row["article_id"])
+                for _, row in tqdm(
+                    chunk.iterrows(),
+                    total=chunk.shape[0],
+                    desc="HBase로 데이터 저장 중",
+                ):
+                    if pd.isna(row["article_id"]):
+                        continue
 
-                # 중복 여부 확인
-                if table.row(row_key):
-                    continue
+                    row_key = str(row["article_id"])
 
-                hbase_data = {
-                    (
-                        f"article:{k}"
-                        if k in ["site", "title", "url", "publisher"]
-                        else f"article_content:{k}"
-                    ): str(v)
-                    for k, v in row.items()
-                }
-                table.put(row_key, hbase_data)
+                    # 중복 여부 확인
+                    if table.row(row_key):
+                        continue
+
+                    hbase_data = {
+                        (
+                            f"article:{k}"
+                            if k in ["site", "title", "url", "publisher"]
+                            else f"article_content:{k}"
+                        ): str(v)
+                        for k, v in row.items()
+                    }
+                    table.put(row_key, hbase_data)
             logger.info(
                 f"CSV 데이터를 HBase 테이블 '{table_name}'에 성공적으로 삽입했습니다."
             )
