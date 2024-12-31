@@ -60,7 +60,7 @@ class ArticleCrawler:
             response.raise_for_status()
             return BeautifulSoup(response.text, "html.parser"), response.url
         except requests.RequestException as e:
-            logger.error(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
+            logger.warning(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
 
             # 예외 발생 시 원문 URL을 가져와서 다시 시도 (네이버 엔터, 스포츠 등에서 주로 발생)
             origin_url = self.get_origin_url(url)
@@ -72,7 +72,7 @@ class ArticleCrawler:
                     response.raise_for_status()
                     return BeautifulSoup(response.text, "html.parser"), response.url
                 except requests.RequestException as e:
-                    logger.error(
+                    logger.warning(
                         f"원문 URL에서 HTML 가져오기 중 에러 발생 {origin_url}: {e}"
                     )
                     return None, url
@@ -205,7 +205,7 @@ class ArticleCrawler:
 
             soup, final_url = self.fetch_html(url)
             if not soup:
-                logger.error(f"HTML을 가져올 수 없습니다: {url}")
+                logger.warning(f"HTML을 가져올 수 없습니다: {url}")
                 return None
 
             article = Article(final_url, language="ko")
@@ -255,12 +255,12 @@ class ArticleCrawler:
                 self.data_template["article_id"] = match.group(1)
             return self.data_template.copy()
         except Exception as e:
-            logger.error(f"기사 본문 처리 중 에러 발생 {article_info['url']}: {e}")
+            logger.warning(f"기사 본문 처리 중 에러 발생 {article_info['url']}: {e}")
             return None
 
     def fetch_articles(self, article_links: List[str]) -> List[Dict[str, str]]:
         # 멀티 프로세싱으로 기사 본문 내용 추출
-        num_workers = min(len(article_links), cpu_count() * 2)
+        num_workers = min(len(article_links), cpu_count())
         try:
             with Pool(processes=num_workers) as pool:
                 articles = list(
@@ -292,7 +292,7 @@ class ArticleCrawler:
                 final_url, get_content_template, final_url
             )
             if not template:
-                logger.error(f"템플릿을 찾을 수 없습니다: {final_url}")
+                logger.warning(f"템플릿을 찾을 수 없습니다: {final_url}")
                 return crawling_data
 
             title_element = soup.select_one(f".{template['title_selector']}")

@@ -1,16 +1,17 @@
 import traceback
 import sys
-from datetime import datetime, timedelta
 from app.article_crawling import ArticleCrawler
 from app.blog_crawling import BlogCrawler
 from app.config import Config, logger
 from app.processing import (
     save_articles_to_db,
     save_articles_to_csv,
-    save_articles_to_json,
+    save_articles_to_json_by_site_and_publisher,
     send_to_hdfs,
     send_to_hbase,
     get_row_from_hbase,
+    calculate_date_ranges,
+    process_and_save_aggregated_data,
 )
 
 
@@ -20,27 +21,9 @@ def save_data_format(format, articles, date):
         return save_articles_to_csv(articles, date)
     elif format == "JSON":
         # 로컬 JSON 파일에 크롤링 데이터 저장
-        return save_articles_to_json(articles, date)
+        return save_articles_to_json_by_site_and_publisher(articles, date)
     else:
         return None
-
-
-def calculate_date_ranges(start_date: str, end_date: str, interval: int = 7):
-    # 시작일과 종료일을 interval일 단위로 분할 (기본 7일)
-    date_ranges = []
-    current_start_date = datetime.strptime(start_date, "%Y%m%d")
-    final_end_date = datetime.strptime(end_date, "%Y%m%d")
-
-    while current_start_date <= final_end_date:
-        current_end_date = min(
-            current_start_date + timedelta(days=interval - 1), final_end_date
-        )
-        date_ranges.append(
-            (current_start_date.strftime("%Y%m%d"), current_end_date.strftime("%Y%m%d"))
-        )
-        current_start_date = current_end_date + timedelta(days=1)
-
-    return date_ranges
 
 
 def main():
@@ -86,17 +69,17 @@ def main():
     ]
 
     # 기간 설정
-    start_date = "20241208"  # 시작 날짜 (YYYYMMDD 형식)
-    end_date = "20241214"  # 종료 날짜 (YYYYMMDD 형식)
+    start_date = "20241101"  # 시작 날짜 (YYYYMMDD 형식)
+    end_date = "20241201"  # 종료 날짜 (YYYYMMDD 형식)
+    interval = "daily"  # 수집 주기 (daily, weekly, monthly, yearly)
 
     article_crawler = ArticleCrawler()
-    # blog_crawler = BlogCrawler()
     all_articles = []  # 크롤링한 전체 기사 데이터
     try:
         logger.info("뉴스 링크 수집 중...")
 
         # 7일 단위로 날짜를 분할
-        date_ranges = calculate_date_ranges(start_date, end_date, interval=1)
+        date_ranges = calculate_date_ranges(start_date, end_date, interval)
         logger.info(f"수집할 날짜 범위: {date_ranges}")
 
         for start, end in date_ranges:
@@ -125,25 +108,31 @@ def main():
             if all_articles:
                 # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
                 local_file_paths = save_data_format("CSV", articles, date=start)
-                # # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
+                # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 
                 # 2. CSV 데이터를 HBase로 저장
                 if local_file_paths:
                     for local_file_path in local_file_paths:
                         send_to_hbase(None, local_file_path)
-                # # HDFS로 전송
+
+                save_data_format("JSON", articles, date=start)
+                # HDFS로 전송
                 # hdfs_file_path = send_to_hdfs(local_file_path)
 
-                # # HDFS에서 HBase로 전송
+                # HDFS에서 HBase로 전송
                 # if hdfs_file_path:
                 #     send_to_hbase(hdfs_file_path, local_file_path)
 
-                # # HBase에서 데이터 조회
+                # HBase에서 데이터 조회
                 # if articles:
                 #     get_row_from_hbase(Config.TABLE_NAME)
             else:
                 logger.warning(f"{start}부터 {end}까지 크롤링된 기사가 없습니다.")
                 continue
+
+        # 일별 데이터를 기반으로 주/월/연 별 데이터 가공 및 저장
+        process_and_save_aggregated_data(start_date, end_date)
+
         logger.info("작업이 완료되었습니다.")
     except Exception as e:
         logger.critical(f"예기치 못한 에러 발생: {e}")
