@@ -1,8 +1,7 @@
 import traceback
-import sys
 from app.article_crawling import ArticleCrawler
 from app.blog_crawling import BlogCrawler
-from app.config import Config, logger
+from app.config import logger
 from app.processing import (
     save_articles_to_db,
     save_articles_to_csv,
@@ -69,7 +68,7 @@ def main():
     ]
 
     # 기간 설정
-    start_date = "20241101"  # 시작 날짜 (YYYYMMDD 형식)
+    start_date = "20241126"  # 시작 날짜 (YYYYMMDD 형식)
     end_date = "20241201"  # 종료 날짜 (YYYYMMDD 형식)
     interval = "daily"  # 수집 주기 (daily, weekly, monthly, yearly)
 
@@ -106,26 +105,30 @@ def main():
                 continue
 
             if all_articles:
-                # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
-                local_file_paths = save_data_format("CSV", articles, date=start)
-                # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
+                try:
+                    # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
+                    local_file_paths = save_data_format("CSV", articles, date=start)
+                    # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 
-                # 2. CSV 데이터를 HBase로 저장
-                if local_file_paths:
-                    for local_file_path in local_file_paths:
-                        send_to_hbase(None, local_file_path)
+                    # 2. CSV 데이터를 HBase로 저장
+                    if local_file_paths:
+                        for local_file_path in local_file_paths:
+                            send_to_hbase(None, local_file_path)
 
-                save_data_format("JSON", articles, date=start)
-                # HDFS로 전송
-                # hdfs_file_path = send_to_hdfs(local_file_path)
+                    save_data_format("JSON", articles, date=start)
+                    # HDFS로 전송
+                    # hdfs_file_path = send_to_hdfs(local_file_path)
 
-                # HDFS에서 HBase로 전송
-                # if hdfs_file_path:
-                #     send_to_hbase(hdfs_file_path, local_file_path)
+                    # HDFS에서 HBase로 전송
+                    # if hdfs_file_path:
+                    #     send_to_hbase(hdfs_file_path, local_file_path)
 
-                # HBase에서 데이터 조회
-                # if articles:
-                #     get_row_from_hbase(Config.TABLE_NAME)
+                    # HBase에서 데이터 조회
+                    # if articles:
+                    #     get_row_from_hbase(Config.TABLE_NAME)
+                except Exception as e:
+                    logger.warning(f"데이터 저장 중 에러 발생: {e}")
+                    continue
             else:
                 logger.warning(f"{start}부터 {end}까지 크롤링된 기사가 없습니다.")
                 continue

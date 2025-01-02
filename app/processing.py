@@ -1,15 +1,14 @@
 import os
-import traceback
-import sys
 from collections import defaultdict
 from app.utils.db_handler import MongoDBConnector
-from app.utils.csv_handler import save_to_csv, load_from_csv, append_to_csv
+from app.utils.csv_handler import load_from_csv, append_to_csv
 from app.utils.json_handler import save_to_json, load_from_json
 from app.utils.hdfs_handler import HDFSConnector
 from app.utils.hbase_handler import HBaseConnector
 from app.config import Config, logger
 from datetime import datetime, timedelta
 
+# 주요 언론사 목록
 main_publisher_list = [
     "경향신문",
     "국민일보",
@@ -37,8 +36,11 @@ def group_articles_by_site_and_publisher(articles, date_str):
     for article in articles:
         publisher = article.get("publisher", "unknown")
         site = article.get("site", "unknown")
+        # 주요 언론사는 별도로 저장
         if publisher in main_publisher_list:
             grouped_articles[site][publisher].append(article)
+
+        # 주요 언론사를 포함한 모든 크롤링 데이터 저장
         grouped_articles[site][date_str].append(article)
     return grouped_articles
 
@@ -108,7 +110,7 @@ def save_articles_to_json_by_site_and_publisher(data, date_str):
         return None
 
     file_paths = []
-    data_dir_with_date = create_data_dir_with_date(date_str)
+    data_dir_with_date = create_data_dir_with_date(date_str)  # 일별 디렉터리 생성
     grouped_articles = group_articles_by_site_and_publisher(data, date_str)
 
     for site, publishers in grouped_articles.items():
@@ -138,10 +140,12 @@ def save_articles_to_json_by_site_and_publisher(data, date_str):
                     file_paths.append(publisher_file_path)
                 except Exception as e:
                     logger.error(f"JSON 저장 중 에러 발생: {e}")
+
             # 종합 데이터 업데이트
             for noun, count in nouns_dict.items():
                 total_nouns_dict[noun] += count
 
+        # 종합 데이터 저장장
         total_file_name = f"{date_str}.json"
         total_file_path = os.path.join(site_dir, total_file_name)
         try:
@@ -151,7 +155,7 @@ def save_articles_to_json_by_site_and_publisher(data, date_str):
                     if noun in existing_total_data:
                         existing_total_data[noun] += count
                     else:
-                        existing_total_data = count
+                        existing_total_data[noun] = count
                 save_to_json(existing_total_data, total_file_path)
             else:
                 save_to_json(total_nouns_dict, total_file_path)
@@ -234,11 +238,11 @@ def process_and_save_aggregated_data(start_date, end_date):
                                     aggregated_data[site].append(daily_data)
                 current_date += timedelta(days=1)
 
-            for site, data_list in aggregated_data.itmes():
+            for site, data_list in aggregated_data.items():
                 site_dir = os.path.join(base_dir, interval, site)
                 os.makedirs(site_dir, exist_ok=True)
                 aggregated_nouns = aggregate_nouns(data_list)
-                file_name = f"articles_{start_date}.json"
+                file_name = f"articles_{start}.json"
                 file_path = os.path.join(site_dir, file_name)
                 try:
                     save_to_json(aggregated_nouns, file_path)

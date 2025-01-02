@@ -32,7 +32,9 @@ class HBaseConnector:
                 chunksize=chunk_size,
             ):
                 chunk = chunk.fillna("")  # 모든 NaN 값을 빈 문자열로 대체
-                chunk = chunk.astype(str)  # HBase에 삽입하기 위해 모든 데이터를 문자열로 변환
+                chunk = chunk.astype(
+                    str
+                )  # HBase에 삽입하기 위해 모든 데이터를 문자열로 변환
 
                 for _, row in tqdm(
                     chunk.iterrows(),

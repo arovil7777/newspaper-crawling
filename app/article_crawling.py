@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from newspaper import Article, Config
+from newspaper import Article
 from app.templates.template_select import get_content_template
 from kiwipiepy import Kiwi
 from typing import Tuple, List, Dict
@@ -9,13 +9,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 from app.config import logger
 from datetime import datetime, timedelta
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
 import certifi
 import re
-import traceback
-import sys
-
 # from sklearn.feature_extraction.text import TfidfVectorizer
 
 
@@ -53,31 +48,38 @@ class ArticleCrawler:
         "scraped_at": datetime.now(),
     }
 
-    def fetch_html(self, url: str) -> Tuple[BeautifulSoup, str]:
+    def fetch_html(self, url: str, retries: int = 3) -> Tuple[BeautifulSoup, str]:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
-        try:
-            response = requests.get(url, verify=certifi.where(), timeout=10)
-            response.raise_for_status()
-            return BeautifulSoup(response.text, "html.parser"), response.url
-        except requests.RequestException as e:
-            logger.warning(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
-
-            # 예외 발생 시 원문 URL을 가져와서 다시 시도 (네이버 엔터, 스포츠 등에서 주로 발생)
-            origin_url = self.get_origin_url(url)
-            if origin_url:
-                try:
-                    response = requests.get(
-                        origin_url, verify=certifi.where(), timeout=10
-                    )
-                    response.raise_for_status()
-                    return BeautifulSoup(response.text, "html.parser"), response.url
-                except requests.RequestException as e:
-                    logger.warning(
-                        f"원문 URL에서 HTML 가져오기 중 에러 발생 {origin_url}: {e}"
-                    )
-                    return None, url
-            else:
-                return None, url
+        for attempt in range(retries):
+            try:
+                response = requests.get(url, verify=certifi.where(), timeout=10)
+                response.raise_for_status()
+                return BeautifulSoup(response.text, "html.parser"), response.url
+            except requests.RequestException as e:
+                logger.warning(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
+                if attempt < retries - 1:
+                    logger.info(f"재시도 중... ({attempt + 1}/{retries})")
+                    continue
+                else:
+                    # 예외 발생 시 원문 URL을 가져와서 다시 시도 (네이버 엔터, 스포츠 등에서 주로 발생)
+                    origin_url = self.get_origin_url(url)
+                    if origin_url:
+                        try:
+                            response = requests.get(
+                                origin_url, verify=certifi.where(), timeout=10
+                            )
+                            response.raise_for_status()
+                            return (
+                                BeautifulSoup(response.text, "html.parser"),
+                                response.url,
+                            )
+                        except requests.RequestException as e:
+                            logger.warning(
+                                f"원문 URL에서 HTML 가져오기 중 에러 발생 {origin_url}: {e}"
+                            )
+                            return None, url
+                    else:
+                        return None, url
 
     def parse_category_links(self, soup: BeautifulSoup) -> List[str]:
         return [
