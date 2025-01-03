@@ -1,16 +1,17 @@
 import traceback
 from app.article_crawling import ArticleCrawler
 from app.blog_crawling import BlogCrawler
-from app.config import logger
+from app.config import logger, compress_old_logs
 from app.processing import (
     save_articles_to_db,
     save_articles_to_csv,
     save_articles_to_json_by_site_and_publisher,
     send_to_hdfs,
-    send_to_hbase,
+    send_to_hbase_with_local_file,
+    send_to_hbase_with_contents,
     get_row_from_hbase,
     calculate_date_ranges,
-    process_and_save_aggregated_data,
+    process_and_save_aggregated_data_from_directories,
 )
 
 
@@ -21,6 +22,10 @@ def save_data_format(format, articles, date):
     elif format == "JSON":
         # 로컬 JSON 파일에 크롤링 데이터 저장
         return save_articles_to_json_by_site_and_publisher(articles, date)
+    elif format == "HBASE":
+        # HBase에 크롤링 데이터 저장
+        send_to_hbase_with_contents(articles)
+        return None
     else:
         return None
 
@@ -68,8 +73,8 @@ def main():
     ]
 
     # 기간 설정
-    start_date = "20241126"  # 시작 날짜 (YYYYMMDD 형식)
-    end_date = "20241201"  # 종료 날짜 (YYYYMMDD 형식)
+    start_date = "20241222"  # 시작 날짜 (YYYYMMDD 형식)
+    end_date = "20241231"  # 종료 날짜 (YYYYMMDD 형식)
     interval = "daily"  # 수집 주기 (daily, weekly, monthly, yearly)
 
     article_crawler = ArticleCrawler()
@@ -106,22 +111,22 @@ def main():
 
             if all_articles:
                 try:
-                    # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV)
-                    local_file_paths = save_data_format("CSV", articles, date=start)
+                    save_data_format("HBASE", articles)
+                    save_data_format("JSON", articles, date=start)
+                    # # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV 또는 HBase)
+                    # local_file_paths = save_data_format("CSV", articles, date=start)
                     # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
 
-                    # 2. CSV 데이터를 HBase로 저장
-                    if local_file_paths:
-                        for local_file_path in local_file_paths:
-                            send_to_hbase(None, local_file_path)
-
-                    save_data_format("JSON", articles, date=start)
+                    # # 2. CSV 데이터를 HBase로 저장
+                    # if local_file_paths:
+                    #     for local_file_path in local_file_paths:
+                    #         send_to_hbase_with_local_file(None, local_file_path)
                     # HDFS로 전송
                     # hdfs_file_path = send_to_hdfs(local_file_path)
 
                     # HDFS에서 HBase로 전송
                     # if hdfs_file_path:
-                    #     send_to_hbase(hdfs_file_path, local_file_path)
+                    #     send_to_hbase_with_local_file(hdfs_file_path, local_file_path)
 
                     # HBase에서 데이터 조회
                     # if articles:
@@ -133,8 +138,8 @@ def main():
                 logger.warning(f"{start}부터 {end}까지 크롤링된 기사가 없습니다.")
                 continue
 
-        # 일별 데이터를 기반으로 주/월/연 별 데이터 가공 및 저장
-        process_and_save_aggregated_data(start_date, end_date)
+        # # 일별 데이터를 기반으로 주/월/연 별 데이터 가공 및 저장
+        # process_and_save_aggregated_data_from_directories()
 
         logger.info("작업이 완료되었습니다.")
     except Exception as e:
@@ -143,4 +148,5 @@ def main():
 
 
 if __name__ == "__main__":
+    compress_old_logs()
     main()

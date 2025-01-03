@@ -94,6 +94,36 @@ class HBaseConnector:
         except Exception as e:
             logger.error(f"JSON 데이터를 HBase 테이블로 삽입 중 에러 발생: {e}")
 
+    def insert_contents_to_table(self, table_name, contents, chunk_size=1000):
+        # 크롤링한 데이터를 HBase 테이블에 삽입
+        try:
+            table = self.get_table(table_name)
+            for i in tqdm(
+                range(0, len(contents), chunk_size), desc="HBase로 데이터 저장 중"
+            ):
+                chunk = contents[i : i + chunk_size]
+                for content in chunk:
+                    row_key = str(content["article_id"])
+
+                    # 중복 여부 확인
+                    if table.row(row_key):
+                        continue
+
+                    hbase_data = {
+                        (
+                            f"article:{k}"
+                            if k in ["site", "title", "url", "publisher"]
+                            else f"article_content:{k}"
+                        ): str(v)
+                        for k, v in content.items()
+                    }
+                    table.put(row_key, hbase_data)
+            logger.info(
+                f"크롤링 데이터를 HBase 테이블 '{table_name}'에 성공적으로 삽입했습니다."
+            )
+        except Exception as e:
+            logger.error(f"크롤링 데이터를 HBase 테이블로 삽입 중 에러 발생: {e}")
+
     def get_row(self, table_name, row_key):
         # HBase 테이블에서 주어진 row key로 데이터 조회
         try:
