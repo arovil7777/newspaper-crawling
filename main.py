@@ -111,26 +111,11 @@ def main():
 
             if all_articles:
                 try:
-                    save_data_format("HBASE", articles)
+                    # HBase에 크롤링 데이터 저장
+                    save_data_format("HBASE", articles, date=start)
+
+                    # JSON 파일로 언급량 데이터 저장
                     save_data_format("JSON", articles, date=start)
-                    # # 1. 로컬에 데이터 저장 (MongoDB 또는 CSV 또는 HBase)
-                    # local_file_paths = save_data_format("CSV", articles, date=start)
-                    # save_articles_to_db(articles) # MongoDB에 크롤링 데이터 저장
-
-                    # # 2. CSV 데이터를 HBase로 저장
-                    # if local_file_paths:
-                    #     for local_file_path in local_file_paths:
-                    #         send_to_hbase_with_local_file(None, local_file_path)
-                    # HDFS로 전송
-                    # hdfs_file_path = send_to_hdfs(local_file_path)
-
-                    # HDFS에서 HBase로 전송
-                    # if hdfs_file_path:
-                    #     send_to_hbase_with_local_file(hdfs_file_path, local_file_path)
-
-                    # HBase에서 데이터 조회
-                    # if articles:
-                    #     get_row_from_hbase(Config.TABLE_NAME)
                 except Exception as e:
                     logger.warning(f"데이터 저장 중 에러 발생: {e}")
                     continue
@@ -138,8 +123,8 @@ def main():
                 logger.warning(f"{start}부터 {end}까지 크롤링된 기사가 없습니다.")
                 continue
 
-        # # 일별 데이터를 기반으로 주/월/연 별 데이터 가공 및 저장
-        # process_and_save_aggregated_data_from_directories()
+        # 일별 데이터를 기반으로 주/월/연 별 데이터 가공 및 저장
+        process_and_save_aggregated_data_from_directories()
 
         logger.info("작업이 완료되었습니다.")
     except Exception as e:
