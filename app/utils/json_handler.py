@@ -1,4 +1,6 @@
 import json
+import os
+import traceback
 from app.config import logger
 from datetime import datetime
 
@@ -13,6 +15,8 @@ def datetime_convert(o):
 def save_to_json(data, file_path):
     # 데이터를 JSON 파일로 저장
     try:
+        # 디렉터리가 존재하지 않으면 생성
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
         with open(file_path, mode="w", encoding="utf-8") as jsonfile:
             json.dump(
                 data, jsonfile, ensure_ascii=False, indent=4, default=datetime_convert
@@ -21,6 +25,7 @@ def save_to_json(data, file_path):
         logger.info(f"데이터가 성공적으로 {file_path}에 저장되었습니다.")
     except Exception as e:
         logger.error(f"JSON 저장 중 에러 발생: {e}")
+        logger.error(traceback.format_exc())
 
 
 def load_from_json(file_path):

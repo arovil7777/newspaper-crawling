@@ -8,6 +8,8 @@ from app.utils.hbase_handler import HBaseConnector
 from app.config import Config, logger
 from datetime import datetime, timedelta
 import re
+import json
+import traceback
 
 # 주요 언론사 목록
 main_publisher_list = [
@@ -23,13 +25,14 @@ main_publisher_list = [
     "한국일보",
 ]
 
+data_dir = "data"
 
-def create_data_dir_with_date(date_str: str) -> str:
-    data_dir = "data"
-    data_dir_with_date = os.path.join(data_dir, date_str)
-    if not os.path.exists(data_dir_with_date):
-        os.makedirs(data_dir_with_date)
-    return data_dir_with_date
+
+def create_data_dir_with_date(site: str, date_str: str) -> str:
+    data_dir_with_site_and_date = os.path.join(data_dir, site, date_str)
+    if not os.path.exists(data_dir_with_site_and_date):
+        os.makedirs(data_dir_with_site_and_date)
+    return data_dir_with_site_and_date
 
 
 def group_articles_by_site_and_publisher(articles: list, date_str: str) -> dict:
@@ -85,14 +88,18 @@ def save_articles_to_csv(data: list, date_str: str) -> list:
         return None
 
     file_paths = []
-    data_dir_with_date = create_data_dir_with_date(date_str)
-    file_path = os.path.join(data_dir_with_date, f"articles_{date_str}.csv")
-    try:
-        append_to_csv(data, file_path)
-        logger.info(f"로컬에 CSV 파일 저장 완료: {file_path}")
-        file_paths.append(file_path)
-    except Exception as e:
-        logger.error(f"CSV 저장 중 에러 발생: {e}")
+    grouped_articles = group_articles_by_site_and_publisher(data, date_str)
+
+    for site, publishers in grouped_articles.items():
+        data_dir_with_date = create_data_dir_with_date(site, date_str)
+        for key, articles in publishers.items():
+            file_path = os.path.join(data_dir_with_date, f"articles_{date_str}.csv")
+            try:
+                append_to_csv(data, file_path)
+                logger.info(f"로컬에 CSV 파일 저장 완료: {file_path}")
+                file_paths.append(file_path)
+            except Exception as e:
+                logger.error(f"CSV 저장 중 에러 발생: {e}")
 
     return file_paths
 
@@ -113,11 +120,10 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
         return None
 
     file_paths = []
-    data_dir_with_date = create_data_dir_with_date(date_str)  # 일별 디렉터리 생성
     grouped_articles = group_articles_by_site_and_publisher(data, date_str)
 
     for site, publishers in grouped_articles.items():
-        site_dir = os.path.join(data_dir_with_date, site)
+        site_dir = os.path.join(data_dir, site)
         os.makedirs(site_dir, exist_ok=True)
 
         total_nouns_dict = defaultdict(int)
@@ -126,7 +132,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
             nouns_dict = extract_nouns_and_count(articles)
             if key in main_publisher_list:
                 file_name = f"{key}.json"
-                publisher_file_path = os.path.join(site_dir, file_name)
+                publisher_file_path = os.path.join(site_dir, date_str, file_name)
 
                 try:
                     if os.path.exists(publisher_file_path):
@@ -142,7 +148,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                     logger.info(f"로컬에 JSON 파일 저장 완료: {publisher_file_path}")
                     file_paths.append(publisher_file_path)
                 except Exception as e:
-                    logger.error(f"JSON 저장 중 에러 발생: {e}")
+                    logger.error(f"'publisher_file_path' JSON 저장 중 에러 발생: {e}")
 
             # 종합 데이터 업데이트
             for noun, count in nouns_dict.items():
@@ -150,7 +156,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
 
         # 종합 데이터 저장
         total_file_name = f"{date_str}.json"
-        total_file_path = os.path.join(site_dir, total_file_name)
+        total_file_path = os.path.join(site_dir, date_str, total_file_name)
         try:
             if os.path.exists(total_file_path):
                 existing_total_data = load_from_json(total_file_path)
@@ -165,7 +171,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
             logger.info(f"로컬에 JSON 파일 저장 완료: {total_file_path}")
             file_paths.append(total_file_path)
         except Exception as e:
-            logger.error(f"JSON 저장 중 에러 발생: {e}")
+            logger.error(f"'total_file_path' JSON 저장 중 에러 발생: {e}")
 
     return file_paths
 
@@ -218,8 +224,8 @@ def calculate_date_ranges(start_date: str, end_date: str, interval: str) -> list
     return date_ranges
 
 
-def process_and_save_aggregated_data_from_directories():
-    base_dir = "data"  # 데이터가 저장된 기본 디렉터리
+def process_and_save_aggregated_data_from_directories(site: str):
+    base_dir = os.path.join(data_dir, site)  # 데이터가 저장된 기본 디렉터리
 
     # 디렉터리 명을 기준으로 날짜 범위 계산
     date_dirs = sorted(
@@ -247,17 +253,12 @@ def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
         aggregated_nouns = defaultdict(int)
         for date_dir in date_dirs:
             if start <= date_dir <= end:
-                daily_dir = os.path.join(base_dir, date_dir)
-                for site in os.listdir(daily_dir):
-                    site_dir = os.path.join(daily_dir, site)
-                    if os.path.isdir(site_dir):
-                        for publisher_file in os.listdir(site_dir):
-                            file_path = os.path.join(site_dir, publisher_file)
-                            # JSON 파일 중 날짜로 명명된 파일만 집계 (언론사 명이 포함된 파일 제외)
-                            if (
-                                file_path.endswith(".json")
-                                and date_dir in publisher_file
-                            ):
+                for content in os.listdir(base_dir):
+                    content_dir = os.path.join(base_dir, content)
+                    if os.path.isdir(content_dir):
+                        for content_file in os.listdir(content_dir):
+                            file_path = os.path.join(content_dir, content_file)
+                            if file_path.endswith(".json") and date_dir in content_file:
                                 try:
                                     daily_data = load_articles_from_json(file_path)
                                     if not isinstance(daily_data, dict):
@@ -266,32 +267,34 @@ def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
                                         )
                                         continue
 
-                                    daily_nouns = aggregate_nouns(daily_data)
-                                    for noun, count in daily_nouns.items():
+                                    # aggregated_nouns = aggregate_nouns(daily_data)
+                                    for noun, count in daily_data.items():
                                         aggregated_nouns[noun] += count
                                 except Exception as e:
                                     logger.error(
                                         f"파일 처리 중 에러 발생: {file_path}, {e}"
                                     )
 
-        try:
-            if interval == "weekly":
-                period = f"{start[:4]}년 {datetime.strptime(start, '%Y%m%d').isocalendar()[1]}주"
-            elif interval == "monthly":
-                period = f"{start[:4]}년 {start[4:6]}월"
-            elif interval == "yearly":
-                period = f"{start[:4]}년"
-            else:
-                raise ValueError(f"Interval 값이 유효하지 않습니다: {interval}")
+        if interval == "weekly":
+            period = (
+                f"{start[:4]}년 {datetime.strptime(start, '%Y%m%d').isocalendar()[1]}주"
+            )
+        elif interval == "monthly":
+            period = f"{start[:4]}년 {start[4:6]}월"
+        elif interval == "yearly":
+            period = f"{start[:4]}년"
+        else:
+            raise ValueError(f"Interval 값이 유효하지 않습니다: {interval}")
 
-            site_dir = os.path.join(base_dir, period)
-            os.makedirs(site_dir, exist_ok=True)
-            file_name = f"articles_{period}.json"
-            file_path = os.path.join(site_dir, file_name)
+        period_dir = os.path.join(base_dir, period)
+        os.makedirs(period_dir, exist_ok=True)
+        file_name = f"{period}.json"
+        file_path = os.path.join(period_dir, file_name)
+        try:
             save_to_json(aggregated_nouns, file_path)
             logger.info(f"로컬에 JSON 파일 저장 완료: {file_path}")
         except Exception as e:
-            logger.error(f"JSON 저장 중 에러 발생: {e}")
+            logger.error(f"'aggregate_and_save_data' JSON 저장 중 에러 발생: {e}")
 
 
 def send_to_hdfs(local_file_path: str) -> str:
