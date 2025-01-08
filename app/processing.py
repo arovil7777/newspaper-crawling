@@ -1,15 +1,12 @@
 import os
 from collections import defaultdict
-from app.utils.db_handler import MongoDBConnector
-from app.utils.csv_handler import load_from_csv, append_to_csv
+from app.utils.csv_handler import append_to_csv
 from app.utils.json_handler import save_to_json, load_from_json
 from app.utils.hdfs_handler import HDFSConnector
 from app.utils.hbase_handler import HBaseConnector
 from app.config import Config, logger
 from datetime import datetime, timedelta
 import re
-import json
-import traceback
 
 # 주요 언론사 목록
 main_publisher_list = [
@@ -40,12 +37,19 @@ def group_articles_by_site_and_publisher(articles: list, date_str: str) -> dict:
     for article in articles:
         publisher = article.get("publisher", "unknown")
         site = article.get("site", "unknown")
+
+        channel = None
+        if site == "네이버 뉴스":
+            channel = "news"
+        else:
+            channel = "unknown"
+
         # 주요 언론사는 별도로 저장
         if publisher in main_publisher_list:
-            grouped_articles[site][publisher].append(article)
+            grouped_articles[channel][publisher].append(article)
 
         # 주요 언론사를 포함한 모든 크롤링 데이터 저장
-        grouped_articles[site][date_str].append(article)
+        grouped_articles[channel][date_str].append(article)
     return grouped_articles
 
 
@@ -59,26 +63,6 @@ def extract_nouns_and_count(data: list) -> dict:
             else:
                 nouns_dict[noun] = 1
     return nouns_dict
-
-
-def save_articles_to_db(
-    data: list, collection_name: str = Config.CRAWLING_COLLECTION
-) -> None:
-    # 크롤링된 기사를 MongoDB에 저장
-    db = MongoDBConnector()
-    collection = db.get_collection(collection_name)
-
-    try:
-        for item in data:
-            # 중복 기사 (기사 url)
-            if not collection.find_one({"url": item["url"]}):
-                collection.insert_one(item)
-
-        logger.info(f"{len(data)}개의 데이터 저장 완료")
-    except Exception as e:
-        logger.error(f"MongoDB 저장 중 에러 발생: {e}")
-    finally:
-        db.close_connection()
 
 
 def save_articles_to_csv(data: list, date_str: str) -> list:
@@ -104,15 +88,6 @@ def save_articles_to_csv(data: list, date_str: str) -> list:
     return file_paths
 
 
-def load_articles_from_csv(file_path: str) -> list:
-    # CSV 파일에서 기사 데이터 로드
-    try:
-        return load_from_csv(file_path)
-    except Exception as e:
-        logger.error(f"CSV 로드 중 에러 발생: {e}")
-        return []
-
-
 def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> list:
     # 크롤링 기사를 JSON 파일로 저장
     if not data:
@@ -120,7 +95,14 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
         return None
 
     file_paths = []
-    grouped_articles = group_articles_by_site_and_publisher(data, date_str)
+    date = ""
+    if len(date_str) == 8 and date_str.isdigit():
+        date_obj = datetime.strptime(date_str, "%Y%m%d")
+        date = date_obj.strftime("%Y-%m-%d")
+    else:
+        date = date_str
+
+    grouped_articles = group_articles_by_site_and_publisher(data, date)
 
     for site, publishers in grouped_articles.items():
         site_dir = os.path.join(data_dir, site)
@@ -132,7 +114,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
             nouns_dict = extract_nouns_and_count(articles)
             if key in main_publisher_list:
                 file_name = f"{key}.json"
-                publisher_file_path = os.path.join(site_dir, date_str, file_name)
+                publisher_file_path = os.path.join(site_dir, date, file_name)
 
                 try:
                     if os.path.exists(publisher_file_path):
@@ -155,8 +137,8 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                 total_nouns_dict[noun] += count
 
         # 종합 데이터 저장
-        total_file_name = f"{date_str}.json"
-        total_file_path = os.path.join(site_dir, date_str, total_file_name)
+        total_file_name = f"{date}.json"
+        total_file_path = os.path.join(site_dir, date, total_file_name)
         try:
             if os.path.exists(total_file_path):
                 existing_total_data = load_from_json(total_file_path)
@@ -185,27 +167,21 @@ def load_articles_from_json(file_path: str) -> list:
         return []
 
 
-def aggregate_nouns(data: dict) -> dict:
-    aggregated_nouns = defaultdict(int)
-    for noun, count in data.items():
-        try:
-            aggregated_nouns[noun] += int(count)
-        except ValueError:
-            logger.error(f"형식이 잘못된 데이터: {noun} = {count}")
-    return aggregated_nouns
-
-
 def calculate_date_ranges(start_date: str, end_date: str, interval: str) -> list:
     # 시작일과 종료일을 interval 단위로 분할
     date_ranges = []
-    current_start_date = datetime.strptime(start_date, "%Y%m%d")
-    final_end_date = datetime.strptime(end_date, "%Y%m%d")
+    current_start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    final_end_date = datetime.strptime(end_date, "%Y-%m-%d")
 
     while current_start_date <= final_end_date:
         if interval == "daily":
             current_end_date = current_start_date
         elif interval == "weekly":
-            current_end_date = current_start_date + timedelta(days=6)
+            start_of_week = current_start_date - timedelta(
+                days=current_start_date.weekday()
+            )
+            end_of_week = start_of_week + timedelta(days=6)
+            current_end_date = min(end_of_week, final_end_date)
         elif interval == "monthly":
             current_end_date = (
                 current_start_date.replace(day=1) + timedelta(days=32)
@@ -215,9 +191,12 @@ def calculate_date_ranges(start_date: str, end_date: str, interval: str) -> list
         else:
             raise ValueError("Invalid interval")
 
-        current_end_date = min(current_start_date, final_end_date)
+        current_end_date = min(current_end_date, final_end_date)
         date_ranges.append(
-            (current_start_date.strftime("%Y%m%d"), current_end_date.strftime("%Y%m%d"))
+            (
+                current_start_date.strftime("%Y-%m-%d"),
+                current_end_date.strftime("%Y-%m-%d"),
+            )
         )
         current_start_date = current_end_date + timedelta(days=1)
 
@@ -232,7 +211,8 @@ def process_and_save_aggregated_data_from_directories(site: str):
         [
             d
             for d in os.listdir(base_dir)
-            if os.path.isdir(os.path.join(base_dir, d)) and re.match(r"^\d{8}$", d)
+            if os.path.isdir(os.path.join(base_dir, d))
+            and re.match(r"^\d{4}-\d{2}-\d{2}$", d)
         ]
     )
     if not date_dirs:
@@ -246,6 +226,9 @@ def process_and_save_aggregated_data_from_directories(site: str):
     for interval in intervals:
         date_ranges = calculate_date_ranges(start_date, end_date, interval)
         aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval)
+
+    # HDFS로 업로드
+    upload_aggregated_files_to_hdfs(base_dir)
 
 
 def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
@@ -267,7 +250,6 @@ def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
                                         )
                                         continue
 
-                                    # aggregated_nouns = aggregate_nouns(daily_data)
                                     for noun, count in daily_data.items():
                                         aggregated_nouns[noun] += count
                                 except Exception as e:
@@ -276,66 +258,39 @@ def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
                                     )
 
         if interval == "weekly":
-            period = (
-                f"{start[:4]}년 {datetime.strptime(start, '%Y%m%d').isocalendar()[1]}주"
-            )
+            period = f"{end[:4]}-W{datetime.strptime(end, '%Y-%m-%d').isocalendar()[1]}"
         elif interval == "monthly":
-            period = f"{start[:4]}년 {start[4:6]}월"
+            period = f"{start[:4]}-{start[5:7]}"
         elif interval == "yearly":
-            period = f"{start[:4]}년"
+            period = f"{start[:4]}"
         else:
             raise ValueError(f"Interval 값이 유효하지 않습니다: {interval}")
 
         period_dir = os.path.join(base_dir, period)
         os.makedirs(period_dir, exist_ok=True)
+
         file_name = f"{period}.json"
         file_path = os.path.join(period_dir, file_name)
         try:
             save_to_json(aggregated_nouns, file_path)
-            logger.info(f"로컬에 JSON 파일 저장 완료: {file_path}")
         except Exception as e:
             logger.error(f"'aggregate_and_save_data' JSON 저장 중 에러 발생: {e}")
 
 
-def send_to_hdfs(local_file_path: str) -> str:
-    # 크롤링 데이터를 HDFS로 전송
-    if not local_file_path:
-        logger.error("유효하지 않은 파일 경로입니다.")
-        return None
-
+def upload_aggregated_files_to_hdfs(base_dir: str):
+    # 주어진 디렉터리에서 생성된 JSON 파일들을 HDFS로 업로드
     try:
-        hdfs = HDFSConnector()
+        hdfs_connector = HDFSConnector()
+        for root, dirs, _ in os.walk(base_dir):
+            for dir_name in dirs:
+                local_file_path = os.path.join(root, dir_name)
+                hdfs_file_path = os.path.join(Config.HDFS_DIR, local_file_path)
 
-        hdfs_dir = Config.HDFS_DIR
-        hdfs_file_path = os.path.join(hdfs_dir, os.path.basename(local_file_path))
-        hdfs.upload_file(local_file_path, hdfs_file_path)
-        logger.info(f"HDFS에 파일 업로드 완료: {hdfs_file_path}")
-
-        # 업로드된 HDFS 경로 반환
-        return hdfs_file_path
+                # HDFS 업로드
+                hdfs_connector.upload_directory(local_file_path, hdfs_file_path)
+        logger.info(f"HDFS로 모든 파일 업로드 완료: {base_dir}")
     except Exception as e:
-        logger.error(f"HDFS 전송 중 에러 발생: {e}")
-        return None
-
-
-def send_to_hbase_with_local_file(hdfs_path: str, local_path: str) -> None:
-    try:
-        # # HDFS에서 파일 다운로드
-        # hdfs_connector = HDFSConnector()
-        # hdfs_connector.client.download(hdfs_path, local_path, overwrite=True)
-        # logger.info(f"HDFS에서 파일 다운로드 완료: {local_path}")
-
-        # HBase에 파일 삽입
-        hbase_connector = HBaseConnector()
-        if local_path.endswith(".csv"):
-            hbase_connector.insert_csv_to_table(Config.TABLE_NAME, local_path)
-        elif local_path.endswith(".json"):
-            hbase_connector.insert_json_to_table(Config.TABLE_NAME, local_path)
-        else:
-            logger.error("지원하지 않는 파일 형식입니다. CSV 또는 JSON을 지원합니다.")
-        hbase_connector.close_connection()
-    except Exception as e:
-        logger.error(f"HBase로 데이터 전송 중 에러 발생: {e}")
+        logger.error(f"HDFS 업로드 중 에러 발생: {e}")
 
 
 def send_to_hbase_with_contents(contents) -> None:
@@ -346,22 +301,3 @@ def send_to_hbase_with_contents(contents) -> None:
         hbase_connector.close_connection()
     except Exception as e:
         logger.error(f"HBase로 데이터 전송 중 에러 발생: {e}")
-
-
-def get_row_from_hbase(table_name: str) -> dict:  # , row_key):
-    try:
-        hbase_connector = HBaseConnector()
-        # row = hbase_connector.get_row(table_name, row_key)
-        row = hbase_connector.get_table_data(table_name)
-        hbase_connector.close_connection()
-        return row
-    except Exception as e:
-        logger.error(f"HBase에서 데이터 조회 중 에러 발생: {e}")
-        return None
-
-
-def hbase_data_to_hdfs(table_name: str, output_path: str) -> None:
-    # HBase 데이터 샘플링 후 HDFS에 저장 (추후 구현 예정)
-    logger.info(f"HBase 테이블 {table_name}에서 데이터 샘플링 및 HDFS 저장")
-    # 샘플링 및 HDFS 저장 로직 구현 필요
-    pass

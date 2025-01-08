@@ -16,7 +16,7 @@ if not os.path.exists(log_dir):
 log_file = os.path.join(log_dir, f"app_{datetime.now().strftime('%Y%m%d')}.log")
 
 
-def compress_old_logs(log_dir: str = log_dir, days: int = 7):
+def compress_old_logs(log_dir: str = log_dir, days: int = 3):
     # 지정한 일수 (days)보다 오래된 로그 파일 압축
     now = datetime.now()
     cutoff = now - timedelta(days=days)
@@ -47,9 +47,6 @@ def setup_logging(log_file: str):
 
 
 class Config:
-    MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-    DATABASE_NAME = os.getenv("DATABASE_NAME", "crawling_db")
-    CRAWLING_COLLECTION = os.getenv("CRAWLING_COLLECTION", "crawling_contents")
     HDFS_URL = os.getenv("HDFS_URL", "http://localhost:9870")
     HDFS_USER = os.getenv("HDFS_USER", "hadoop")
     HDFS_DIR = os.getenv("HDFS_DIR", "/data")

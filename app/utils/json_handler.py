@@ -21,8 +21,6 @@ def save_to_json(data, file_path):
             json.dump(
                 data, jsonfile, ensure_ascii=False, indent=4, default=datetime_convert
             )
-
-        logger.info(f"데이터가 성공적으로 {file_path}에 저장되었습니다.")
     except Exception as e:
         logger.error(f"JSON 저장 중 에러 발생: {e}")
         logger.error(traceback.format_exc())
@@ -33,8 +31,6 @@ def load_from_json(file_path):
     try:
         with open(file_path, mode="r", encoding="utf-8") as jsonfile:
             data = json.load(jsonfile)
-
-        logger.info(f"{file_path}에서 데이터가 성공적으로 로드되었습니다.")
         return data
     except Exception as e:
         logger.error(f"JSON 로드 중 에러 발생: {e}")
