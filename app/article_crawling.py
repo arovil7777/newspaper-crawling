@@ -11,6 +11,8 @@ from app.config import logger
 from datetime import datetime, timedelta
 import certifi
 import re
+import traceback
+
 # from sklearn.feature_extraction.text import TfidfVectorizer
 
 
@@ -36,15 +38,12 @@ class ArticleCrawler:
         "site": "사이트명 확인할 수 없음",
         "article_id": "기사 ID 확인할 수 없음",
         "url": "기사 URL 확인할 수 없음",
-        # "summary": "요약 확인할 수 없음",
         "title": "제목 확인할 수 없음",
         "content": "본문 확인할 수 없음",
-        # "writer": "작성자 확인할 수 없음",
         "publisher": "언론사 확인할 수 없음",
         "category": "카테고리 확인할 수 없음",
         "nouns": "형태소 분석 확인할 수 없음",
         "published_at": "작성일 확인할 수 없음",
-        # "updated_at": "수정일 확인할 수 없음",
         "scraped_at": datetime.now(),
     }
 
@@ -52,9 +51,22 @@ class ArticleCrawler:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
         for attempt in range(retries):
             try:
-                response = requests.get(url, verify=certifi.where(), timeout=10)
+                # session = requests.session()
+                # session.
+                proxies = {
+                    "http": "socks5h://127.0.0.1:9050",
+                    "https": "socks5h://127.0.0.1:9050",
+                }
+                response = requests.get(
+                    url, verify=certifi.where(), proxies=proxies, timeout=10
+                )
+                # response = session.get(url, verify=certifi.where(), timeout=10)
                 response.raise_for_status()
-                return BeautifulSoup(response.text, "html.parser"), response.url
+                return (
+                    BeautifulSoup(response.text, "html.parser"),
+                    response.url,
+                    response.text,
+                )
             except requests.RequestException as e:
                 logger.warning(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
                 if attempt < retries - 1:
@@ -65,21 +77,34 @@ class ArticleCrawler:
                     origin_url = self.get_origin_url(url)
                     if origin_url:
                         try:
+                            # session = requests.session()
+                            # session.
+                            proxies = {
+                                "http": "socks5h://127.0.0.1:9050",
+                                "https": "socks5h://127.0.0.1:9050",
+                            }
                             response = requests.get(
-                                origin_url, verify=certifi.where(), timeout=10
+                                origin_url,
+                                verify=certifi.where(),
+                                proxies=proxies,
+                                timeout=10,
                             )
+                            # response = session.get(
+                            #     origin_url, verify=certifi.where(), timeout=10
+                            # )
                             response.raise_for_status()
                             return (
                                 BeautifulSoup(response.text, "html.parser"),
                                 response.url,
+                                response.text,
                             )
                         except requests.RequestException as e:
                             logger.warning(
                                 f"원문 URL에서 HTML 가져오기 중 에러 발생 {origin_url}: {e}"
                             )
-                            return None, url
+                            return None, url, None
                     else:
-                        return None, url
+                        return None, url, None
 
     def parse_category_links(self, soup: BeautifulSoup) -> List[str]:
         return [
@@ -92,7 +117,7 @@ class ArticleCrawler:
         self, category_url: str, start_date: str, end_date: str
     ) -> List[Dict[str, str]]:
         # 카테고리 URL에서 언론사 링크 추출
-        soup, _ = self.fetch_html(category_url)
+        soup, _, _ = self.fetch_html(category_url)
         if not soup:
             return []
 
@@ -118,7 +143,7 @@ class ArticleCrawler:
         ]
 
     def fetch_page_links(self, paginated_url: str) -> List[str]:
-        soup, _ = self.fetch_html(paginated_url)
+        soup, _, _ = self.fetch_html(paginated_url)
         if not soup:
             return []
 
@@ -164,7 +189,7 @@ class ArticleCrawler:
         self, all_publisher_url: str, start_date: str, end_date: str
     ) -> List[Dict[str, str]]:
         # 사이트 추출
-        soup, _ = self.fetch_html(all_publisher_url)
+        soup, _, _ = self.fetch_html(all_publisher_url)
         if not soup:
             return []
 
@@ -205,13 +230,13 @@ class ArticleCrawler:
                 }
             )
 
-            soup, final_url = self.fetch_html(url)
+            soup, final_url, response_text = self.fetch_html(url)
             if not soup:
                 logger.warning(f"HTML을 가져올 수 없습니다: {url}")
                 return None
 
             article = Article(final_url, language="ko")
-            article.download()
+            article.download(input_html=response_text)
             article.parse()
 
             content = article.text or self.get_crawling_data(final_url)["content"]
@@ -258,6 +283,7 @@ class ArticleCrawler:
             return self.data_template.copy()
         except Exception as e:
             logger.warning(f"기사 본문 처리 중 에러 발생 {article_info['url']}: {e}")
+            logger.error(traceback.format_exc())
             return None
 
     def fetch_articles(self, article_links: List[str]) -> List[Dict[str, str]]:
@@ -285,7 +311,7 @@ class ArticleCrawler:
         crawling_data = {"title": "", "content": "", "published_at": ""}
 
         try:
-            soup, final_url = self.fetch_html(url)
+            soup, final_url, _ = self.fetch_html(url)
             if not soup:
                 return crawling_data
 
@@ -335,7 +361,16 @@ class ArticleCrawler:
 
     def get_origin_url(self, url: str) -> str:
         try:
-            response = requests.get(url, verify=certifi.where(), timeout=10)
+            # session = requests.session()
+            # session.
+            proxies = {
+                "http": "socks5h://127.0.0.1:9050",
+                "https": "socks5h://127.0.0.1:9050",
+            }
+            response = requests.get(
+                url, verify=certifi.where(), proxies=proxies, timeout=10
+            )
+            # response = session.get(url, verify=certifi.where(), timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
 
