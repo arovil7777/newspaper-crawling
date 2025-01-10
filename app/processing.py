@@ -127,6 +127,8 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                         save_to_json(existing_data, publisher_file_path)
                     else:
                         save_to_json(nouns_dict, publisher_file_path)
+
+                    upload_aggregated_files_to_hdfs(publisher_file_path)
                     logger.info(f"로컬에 JSON 파일 저장 완료: {publisher_file_path}")
                     file_paths.append(publisher_file_path)
                 except Exception as e:
@@ -150,6 +152,8 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                 save_to_json(existing_total_data, total_file_path)
             else:
                 save_to_json(total_nouns_dict, total_file_path)
+
+            upload_aggregated_files_to_hdfs(total_file_path)
             logger.info(f"로컬에 JSON 파일 저장 완료: {total_file_path}")
             file_paths.append(total_file_path)
         except Exception as e:

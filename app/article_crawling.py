@@ -12,6 +12,8 @@ from datetime import datetime, timedelta
 import certifi
 import re
 import traceback
+import time
+import random
 
 # from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -51,16 +53,22 @@ class ArticleCrawler:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
         for attempt in range(retries):
             try:
-                # session = requests.session()
-                # session.
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+                }
                 proxies = {
                     "http": "socks5h://127.0.0.1:9050",
                     "https": "socks5h://127.0.0.1:9050",
                 }
+
+                time.sleep(random.uniform(1, 3))
                 response = requests.get(
-                    url, verify=certifi.where(), proxies=proxies, timeout=10
+                    url,
+                    verify=certifi.where(),
+                    proxies=proxies,
+                    headers=headers,
+                    timeout=10,
                 )
-                # response = session.get(url, verify=certifi.where(), timeout=10)
                 response.raise_for_status()
                 return (
                     BeautifulSoup(response.text, "html.parser"),
@@ -77,21 +85,14 @@ class ArticleCrawler:
                     origin_url = self.get_origin_url(url)
                     if origin_url:
                         try:
-                            # session = requests.session()
-                            # session.
-                            proxies = {
-                                "http": "socks5h://127.0.0.1:9050",
-                                "https": "socks5h://127.0.0.1:9050",
-                            }
+                            time.sleep(random.uniform(1, 3))
                             response = requests.get(
                                 origin_url,
                                 verify=certifi.where(),
                                 proxies=proxies,
+                                headers=headers,
                                 timeout=10,
                             )
-                            # response = session.get(
-                            #     origin_url, verify=certifi.where(), timeout=10
-                            # )
                             response.raise_for_status()
                             return (
                                 BeautifulSoup(response.text, "html.parser"),
@@ -361,16 +362,21 @@ class ArticleCrawler:
 
     def get_origin_url(self, url: str) -> str:
         try:
-            # session = requests.session()
-            # session.
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+            }
             proxies = {
                 "http": "socks5h://127.0.0.1:9050",
                 "https": "socks5h://127.0.0.1:9050",
             }
+            time.sleep(random.uniform(1, 3))
             response = requests.get(
-                url, verify=certifi.where(), proxies=proxies, timeout=10
+                url,
+                verify=certifi.where(),
+                proxies=proxies,
+                headers=headers,
+                timeout=10,
             )
-            # response = session.get(url, verify=certifi.where(), timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, "html.parser")
 
