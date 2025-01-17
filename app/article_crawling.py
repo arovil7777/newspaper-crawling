@@ -7,13 +7,17 @@ from typing import Tuple, List, Dict
 from multiprocessing import Pool, cpu_count
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-from app.config import logger
+from app.config import logger, Config
 from datetime import datetime, timedelta
+from app.utils.kiwi_handler import ContentAnalyzer
 import certifi
 import re
 import traceback
 import time
 import random
+import tempfile
+import subprocess
+import base64
 
 # from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -44,28 +48,76 @@ class ArticleCrawler:
         "content": "본문 확인할 수 없음",
         "publisher": "언론사 확인할 수 없음",
         "category": "카테고리 확인할 수 없음",
-        "nouns": "형태소 분석 확인할 수 없음",
+        "morphemes": "형태소 분석 확인할 수 없음",
         "published_at": "작성일 확인할 수 없음",
         "scraped_at": datetime.now(),
     }
 
-    def fetch_html(self, url: str, retries: int = 3) -> Tuple[BeautifulSoup, str]:
+    def __init__(
+        self, sleep_range: Tuple[float, float] = (1.0, 3.0), max_retries: int = 3
+    ):
+        self.sleep_range = sleep_range
+        self.max_retries = max_retries
+        self.vpn_process = None
+
+    def start_vpn(self, country: str):
+        # VPN 연결 시작
+        try:
+            if len(country) == 2:  # 국가 코드
+                i = 6
+            elif len(country) > 2:  # 국가명
+                i = 5
+            else:
+                logger.warning(f"입력한 국가명의 길이가 짧습니다: {country}")
+            vpn_data = requests.get("http://www.vpngate.net/api/iphone/").text.replace(
+                "\r", ""
+            )
+            servers = [line.split(",") for line in vpn_data.split("\n")]
+            servers = [s for s in servers[2:] if len(s) > 1]
+
+            desired = [s for s in servers if country.lower() in s[i].lower()]
+            if not desired:
+                logger.error(f"{country} 국가의 VPN 서버를 찾을 수 없습니다.")
+                return False
+
+            supported = [s for s in desired if len(s[-1]) > 0]
+            winner = sorted(
+                supported, key=lambda s: float(s[2].replace(",", ".")), reverse=True
+            )[0]
+
+            _, path = tempfile.mkstemp()
+            with open(path, "w") as f:
+                f.write(base64.b64decode(winner[-1]).decode())
+                f.write(
+                    "\nscript-security 2\nup /etc/openvpn/update-resolv-conf\ndown /etc/openvpn/update-resolv-conf"
+                )
+
+            self.vpn_process = subprocess.Popen(["sudo", "openvpn", "--config", path])
+            time.sleep(5)  # VPN 연결 대기
+            logger.info("VPN 연결 성공")
+            return True
+        except Exception as e:
+            logger.error(f"VPN 연결 중 오류 발생: {e}")
+            return False
+
+    def stop_vpn(self):
+        # VPN 연결 종료
+        if self.vpn_process:
+            self.vpn_process.terminate()
+            self.vpn_process.wait()
+            logger.info("VPN 연결 종료")
+
+    def fetch_html(self, url: str) -> Tuple[BeautifulSoup, str, str]:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환
-        for attempt in range(retries):
+        for attempt in range(self.max_retries):
             try:
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
                 }
-                proxies = {
-                    "http": "socks5h://127.0.0.1:9050",
-                    "https": "socks5h://127.0.0.1:9050",
-                }
-
-                time.sleep(random.uniform(1, 3))
+                time.sleep(random.uniform(*self.sleep_range))
                 response = requests.get(
                     url,
                     verify=certifi.where(),
-                    proxies=proxies,
                     headers=headers,
                     timeout=10,
                 )
@@ -77,19 +129,18 @@ class ArticleCrawler:
                 )
             except requests.RequestException as e:
                 logger.warning(f"URL에서 HTML 가져오기 중 에러 발생 {url}: {e}")
-                if attempt < retries - 1:
-                    logger.info(f"재시도 중... ({attempt + 1}/{retries})")
+                if attempt < self.max_retries - 1:
+                    logger.info(f"재시도 중... ({attempt + 1}/{self.max_retries})")
                     continue
                 else:
                     # 예외 발생 시 원문 URL을 가져와서 다시 시도 (네이버 엔터, 스포츠 등에서 주로 발생)
                     origin_url = self.get_origin_url(url)
                     if origin_url:
                         try:
-                            time.sleep(random.uniform(1, 3))
+                            time.sleep(random.uniform(*self.sleep_range))
                             response = requests.get(
                                 origin_url,
                                 verify=certifi.where(),
-                                proxies=proxies,
                                 headers=headers,
                                 timeout=10,
                             )
@@ -160,12 +211,12 @@ class ArticleCrawler:
         ]
 
     def fetch_news_links_parallel(
-        self, publisher_url: str, date_str: str, max_pages: int = 10
+        self, publisher_url: str, date_str: str, max_pages: int = 5
     ) -> List[Dict[str, str]]:
         def process_page(page):
             return self.fetch_page_links(f"{publisher_url}&page={page}")
 
-        max_workers = min(max(1, cpu_count() - 2), max_pages)
+        max_workers = min(max(1, cpu_count()), max_pages)
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [
                 executor.submit(process_page, page) for page in range(1, max_pages + 1)
@@ -267,13 +318,14 @@ class ArticleCrawler:
                     for img in publisher_tag.find_all("img"):
                         self.data_template["publisher"] = img.attrs["title"]
 
+            content_analyzer = ContentAnalyzer()
             self.data_template.update(
                 {
                     "title": title,
                     "content": content,
                     "published_at": article.publish_date
                     or self.get_crawling_data(final_url)["published_at"],
-                    "nouns": self.extract_nouns(content),
+                    "morphemes": content_analyzer.extract_morphemes(content),
                 }
             )
 
@@ -306,6 +358,7 @@ class ArticleCrawler:
             return []
         except Exception as e:
             logger.error(f"예기치 않은 에러 발생: {e}")
+            logger.error(traceback.format_exc())
             return []
 
     def get_crawling_data(self, url: str):
@@ -365,15 +418,10 @@ class ArticleCrawler:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
             }
-            proxies = {
-                "http": "socks5h://127.0.0.1:9050",
-                "https": "socks5h://127.0.0.1:9050",
-            }
             time.sleep(random.uniform(1, 3))
             response = requests.get(
                 url,
                 verify=certifi.where(),
-                proxies=proxies,
                 headers=headers,
                 timeout=10,
             )
@@ -386,7 +434,7 @@ class ArticleCrawler:
                 return origin_url_element.get("href", "")
             else:
                 return ""
-        except Exception as e:
+        except requests.RequestException as e:
             logger.error(f"기사 원문 URL 추출 중 에러: {e}")
             return ""
 
@@ -396,19 +444,13 @@ class ArticleCrawler:
             self.template_cache[cache_key] = fetch_function(*args)
         return self.template_cache[cache_key]
 
-    def extract_nouns(self, content: str) -> List[str]:
-        if not content:
-            return []
-        tokens = self.kiwi.analyze(content, top_n=1)[0][0]
-        return [token[0] for token in tokens if token[1].startswith("NN")]
-
     """
     def extract_keywords_using_tfidf(self, articles: List[Dict[str, str]]):
         # TF-IDF 기법을 사용하여 명사만으로 키워드 추출
-        noun_contents = [
-            " ".join(article.get("nouns", []))
+        morpheme_contents = [
+            " ".join(article.get("morphemes", []))
             for article in articles
-            if "nouns" in article
+            if "morphemes" in article
         ]  # 명사 리스트를 텍스트 형태로 변환
 
         # TF-IDF 벡터라이저 사용
@@ -419,7 +461,7 @@ class ArticleCrawler:
             ngram_range=(1, 1),
             stop_words="english",
         )
-        X = vectorizer.fit_transform(noun_contents)
+        X = vectorizer.fit_transform(morpheme_contents)
 
         # 단어와 TF-IDF 점수를 추출
         feature_names = vectorizer.get_feature_names_out()
