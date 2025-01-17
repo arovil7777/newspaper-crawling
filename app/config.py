@@ -53,6 +53,7 @@ class Config:
     HBASE_HOST = os.getenv("HBASE_HOST", "localhost")
     HBASE_PORT = int(os.getenv("HBASE_PORT", 9090))
     TABLE_NAME = os.getenv("TABLE_NAME", "articles_table")
+    STOP_WORD_PATH = os.path.join(os.getcwd(), "app/utils/StopWords.txt")
 
 
 # 로깅 설정

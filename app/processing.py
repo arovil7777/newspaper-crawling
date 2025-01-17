@@ -1,6 +1,6 @@
 import os
 from collections import defaultdict
-from app.utils.csv_handler import append_to_csv
+from app.utils.csv_handler import append_to_csv, load_from_csv
 from app.utils.json_handler import save_to_json, load_from_json
 from app.utils.hdfs_handler import HDFSConnector
 from app.utils.hbase_handler import HBaseConnector
@@ -53,16 +53,25 @@ def group_articles_by_site_and_publisher(articles: list, date_str: str) -> dict:
     return grouped_articles
 
 
-def extract_nouns_and_count(data: list) -> dict:
-    nouns_dict = {}
+def extract_morphemes_and_count(data: list) -> dict:
+    morphemes_dict = {}
     for article in data:
-        nouns = article.get("nouns", [])
-        for noun in nouns:
-            if noun in nouns_dict:
-                nouns_dict[noun] += 1
+        morphemes = article.get("nomorphemesuns", [])
+        for morpheme in morphemes:
+            if morpheme in morphemes_dict:
+                morphemes_dict[morpheme] += 1
             else:
-                nouns_dict[noun] = 1
-    return nouns_dict
+                morphemes_dict[morpheme] = 1
+    return morphemes_dict
+
+
+def load_articles_from_csv(file_path):
+    # CSV 파일에서 기사 데이터 로드
+    try:
+        return load_from_csv(file_path)
+    except Exception as e:
+        logger.error(f"CSV 로드 중 에러 발생: {e}")
+        return []
 
 
 def save_articles_to_csv(data: list, date_str: str) -> list:
@@ -72,12 +81,18 @@ def save_articles_to_csv(data: list, date_str: str) -> list:
         return None
 
     file_paths = []
-    grouped_articles = group_articles_by_site_and_publisher(data, date_str)
+    date = ""
+    if len(date_str) == 8 and date_str.isdigit():
+        date_obj = datetime.strptime(date_str, "%Y%m%d")
+        date = date_obj.strftime("%Y-%m-%d")
+    else:
+        date = date_str
 
+    grouped_articles = group_articles_by_site_and_publisher(data, date)
     for site, publishers in grouped_articles.items():
-        data_dir_with_date = create_data_dir_with_date(site, date_str)
+        data_dir_with_date = create_data_dir_with_date(site, date)
         for key, articles in publishers.items():
-            file_path = os.path.join(data_dir_with_date, f"articles_{date_str}.csv")
+            file_path = os.path.join(data_dir_with_date, f"articles_{date}.csv")
             try:
                 append_to_csv(data, file_path)
                 logger.info(f"로컬에 CSV 파일 저장 완료: {file_path}")
@@ -108,10 +123,10 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
         site_dir = os.path.join(data_dir, site)
         os.makedirs(site_dir, exist_ok=True)
 
-        total_nouns_dict = defaultdict(int)
+        total_morphemes_dict = defaultdict(int)
 
         for key, articles in publishers.items():
-            nouns_dict = extract_nouns_and_count(articles)
+            morphemes_dict = extract_morphemes_and_count(articles)
             if key in main_publisher_list:
                 file_name = f"{key}.json"
                 publisher_file_path = os.path.join(site_dir, date, file_name)
@@ -119,14 +134,14 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                 try:
                     if os.path.exists(publisher_file_path):
                         existing_data = load_from_json(publisher_file_path)
-                        for noun, count in nouns_dict.items():
-                            if noun in existing_data:
-                                existing_data[noun] += count
+                        for morpheme, count in morphemes_dict.items():
+                            if morpheme in existing_data:
+                                existing_data[morpheme] += count
                             else:
-                                existing_data[noun] = count
+                                existing_data[morpheme] = count
                         save_to_json(existing_data, publisher_file_path)
                     else:
-                        save_to_json(nouns_dict, publisher_file_path)
+                        save_to_json(morphemes_dict, publisher_file_path)
 
                     upload_aggregated_files_to_hdfs(publisher_file_path)
                     logger.info(f"로컬에 JSON 파일 저장 완료: {publisher_file_path}")
@@ -135,8 +150,8 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                     logger.error(f"'publisher_file_path' JSON 저장 중 에러 발생: {e}")
 
             # 종합 데이터 업데이트
-            for noun, count in nouns_dict.items():
-                total_nouns_dict[noun] += count
+            for morpheme, count in morphemes_dict.items():
+                total_morphemes_dict[morpheme] += count
 
         # 종합 데이터 저장
         total_file_name = f"{date}.json"
@@ -144,14 +159,14 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
         try:
             if os.path.exists(total_file_path):
                 existing_total_data = load_from_json(total_file_path)
-                for noun, count in total_nouns_dict.items():
-                    if noun in existing_total_data:
-                        existing_total_data[noun] += count
+                for morpheme, count in total_morphemes_dict.items():
+                    if morpheme in existing_total_data:
+                        existing_total_data[morpheme] += count
                     else:
-                        existing_total_data[noun] = count
+                        existing_total_data[morpheme] = count
                 save_to_json(existing_total_data, total_file_path)
             else:
-                save_to_json(total_nouns_dict, total_file_path)
+                save_to_json(total_morphemes_dict, total_file_path)
 
             upload_aggregated_files_to_hdfs(total_file_path)
             logger.info(f"로컬에 JSON 파일 저장 완료: {total_file_path}")
@@ -237,7 +252,7 @@ def process_and_save_aggregated_data_from_directories(site: str):
 
 def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
     for start, end in date_ranges:
-        aggregated_nouns = defaultdict(int)
+        aggregated_morphemes = defaultdict(int)
         for date_dir in date_dirs:
             if start <= date_dir <= end:
                 for content in os.listdir(base_dir):
@@ -254,8 +269,8 @@ def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
                                         )
                                         continue
 
-                                    for noun, count in daily_data.items():
-                                        aggregated_nouns[noun] += count
+                                    for morpheme, count in daily_data.items():
+                                        aggregated_morphemes[morpheme] += count
                                 except Exception as e:
                                     logger.error(
                                         f"파일 처리 중 에러 발생: {file_path}, {e}"
@@ -276,7 +291,7 @@ def aggregate_and_save_data(date_ranges, date_dirs, base_dir, interval):
         file_name = f"{period}.json"
         file_path = os.path.join(period_dir, file_name)
         try:
-            save_to_json(aggregated_nouns, file_path)
+            save_to_json(aggregated_morphemes, file_path)
         except Exception as e:
             logger.error(f"'aggregate_and_save_data' JSON 저장 중 에러 발생: {e}")
 
@@ -295,6 +310,60 @@ def upload_aggregated_files_to_hdfs(base_dir: str):
         logger.info(f"HDFS로 모든 파일 업로드 완료: {base_dir}")
     except Exception as e:
         logger.error(f"HDFS 업로드 중 에러 발생: {e}")
+
+
+def send_to_hbase(local_path):
+    try:
+        # HBase에 파일 삽입
+        hbase_connector = HBaseConnector()
+        if local_path.endswith(".csv"):
+            hbase_connector.insert_csv_to_table(Config.TABLE_NAME, local_path)
+        elif local_path.endswith(".json"):
+            hbase_connector.insert_json_to_table(Config.TABLE_NAME, local_path)
+        else:
+            logger.error("지원하지 않는 파일 형식입니다. CSV 또는 JSON을 지원합니다.")
+        hbase_connector.close_connection()
+    except Exception as e:
+        logger.error(f"HBase로 데이터 전송 중 오류 발생: {e}")
+
+
+def upload_csv_to_hbase(local_path):
+    # 로컬 CSV 파일을 읽어 HBase 테이블로 전송
+    if not os.path.exists(local_path):
+        logger.error(f"디렉터리를 찾을 수 없습니다: {local_path}")
+        return
+
+    try:
+        # 디렉터리 내의 모든 CSV 파일 로드
+        csv_files = [
+            os.path.join(local_path, file)
+            for file in os.listdir(local_path)
+            if file.endswith(".csv")
+        ]
+
+        if not csv_files:
+            logger.warning(
+                f"디렉터리 '{local_path}'에 CSV 파일이 없습니다: {local_path}"
+            )
+            return
+
+        # HBase 연결 설정
+        hbase_connector = HBaseConnector()
+        table_name = Config.TABLE_NAME
+
+        # 각 CSV 파일 처리 및 전송
+        for csv_file in csv_files:
+            try:
+                # CSV 파일을 HBase 테이블에 삽입
+                hbase_connector.insert_csv_to_table(table_name, csv_file)
+                logger.info(f"CSV 파일 '{csv_file}' 데이터를 HBase로 전송 완료")
+            except Exception as e:
+                logger.error(f"파일 '{csv_file}' 처리 중 에러 발생: {e}")
+
+        # HBase 연결 종료
+        hbase_connector.close_connection()
+    except Exception as e:
+        logger.error(f"디렉터리 내 CSV 파일 처리 중 에러 발생: {e}")
 
 
 def send_to_hbase_with_contents(contents) -> None:
