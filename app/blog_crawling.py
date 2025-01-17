@@ -71,7 +71,7 @@ class BlogCrawler:
         # "writer": "작성자 확인할 수 없음",
         "bloger": "블로그 작성자자 확인할 수 없음",
         "category": "카테고리 확인할 수 없음",
-        "nouns": "형태소 분석 확인할 수 없음",
+        "morphemes": "형태소 분석 확인할 수 없음",
         "published_at": "작성일 확인할 수 없음",
         # "updated_at": "수정일 확인할 수 없음",
         "scraped_at": datetime.now(),
@@ -205,7 +205,7 @@ class BlogCrawler:
             #         "content": content,
             #         "published_at": article.publish_date
             #         or self.get_crawling_data(final_url)["published_at"],
-            #         "nouns": self.extract_nouns(content),
+            #         "morphemes": self.extract_morphemes(content),
             #     }
             # )
 
@@ -313,19 +313,13 @@ class BlogCrawler:
     #         self.template_cache[cache_key] = fetch_function(*args)
     #     return self.template_cache[cache_key]
 
-    # def extract_nouns(self, content: str) -> List[str]:
-    #     if not content:
-    #         return []
-    #     tokens = self.kiwi.analyze(content, top_n=1)[0][0]
-    #     return [token[0] for token in tokens if token[1].startswith("NN")]
-
     """
     def extract_keywords_using_tfidf(self, articles: List[Dict[str, str]]):
         # TF-IDF 기법을 사용하여 명사만으로 키워드 추출
-        noun_contents = [
-            " ".join(article.get("nouns", []))
+        morpheme_contents = [
+            " ".join(article.get("morphemes", []))
             for article in articles
-            if "nouns" in article
+            if "morphemes" in article
         ]  # 명사 리스트를 텍스트 형태로 변환
 
         # TF-IDF 벡터라이저 사용
@@ -336,7 +330,7 @@ class BlogCrawler:
             ngram_range=(1, 1),
             stop_words="english",
         )
-        X = vectorizer.fit_transform(noun_contents)
+        X = vectorizer.fit_transform(morpheme_contents)
 
         # 단어와 TF-IDF 점수를 추출
         feature_names = vectorizer.get_feature_names_out()

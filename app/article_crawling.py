@@ -15,9 +15,6 @@ import re
 import traceback
 import time
 import random
-import tempfile
-import subprocess
-import base64
 
 # from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -58,54 +55,6 @@ class ArticleCrawler:
     ):
         self.sleep_range = sleep_range
         self.max_retries = max_retries
-        self.vpn_process = None
-
-    def start_vpn(self, country: str):
-        # VPN 연결 시작
-        try:
-            if len(country) == 2:  # 국가 코드
-                i = 6
-            elif len(country) > 2:  # 국가명
-                i = 5
-            else:
-                logger.warning(f"입력한 국가명의 길이가 짧습니다: {country}")
-            vpn_data = requests.get("http://www.vpngate.net/api/iphone/").text.replace(
-                "\r", ""
-            )
-            servers = [line.split(",") for line in vpn_data.split("\n")]
-            servers = [s for s in servers[2:] if len(s) > 1]
-
-            desired = [s for s in servers if country.lower() in s[i].lower()]
-            if not desired:
-                logger.error(f"{country} 국가의 VPN 서버를 찾을 수 없습니다.")
-                return False
-
-            supported = [s for s in desired if len(s[-1]) > 0]
-            winner = sorted(
-                supported, key=lambda s: float(s[2].replace(",", ".")), reverse=True
-            )[0]
-
-            _, path = tempfile.mkstemp()
-            with open(path, "w") as f:
-                f.write(base64.b64decode(winner[-1]).decode())
-                f.write(
-                    "\nscript-security 2\nup /etc/openvpn/update-resolv-conf\ndown /etc/openvpn/update-resolv-conf"
-                )
-
-            self.vpn_process = subprocess.Popen(["sudo", "openvpn", "--config", path])
-            time.sleep(5)  # VPN 연결 대기
-            logger.info("VPN 연결 성공")
-            return True
-        except Exception as e:
-            logger.error(f"VPN 연결 중 오류 발생: {e}")
-            return False
-
-    def stop_vpn(self):
-        # VPN 연결 종료
-        if self.vpn_process:
-            self.vpn_process.terminate()
-            self.vpn_process.wait()
-            logger.info("VPN 연결 종료")
 
     def fetch_html(self, url: str) -> Tuple[BeautifulSoup, str, str]:
         # URL에서 HTML을 가져와서 BeautifulSoup 객체로 반환

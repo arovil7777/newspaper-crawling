@@ -1,5 +1,6 @@
 import happybase
 import pandas as pd
+import numpy as np
 import json
 import traceback
 from app.config import Config, logger
@@ -27,14 +28,17 @@ class HBaseConnector:
             table = self.get_table(table_name)
             chunk_size = 1000  # 청크 크기 설정 (메모리 이슈)
             for chunk in pd.read_csv(
-                csv_path,
-                encoding="utf-8-sig",
-                chunksize=chunk_size,
+                csv_path, encoding="utf-8-sig", chunksize=chunk_size, dtype=str
             ):
                 chunk = chunk.fillna("")  # 모든 NaN 값을 빈 문자열로 대체
-                chunk = chunk.astype(
-                    str
-                )  # HBase에 삽입하기 위해 모든 데이터를 문자열로 변환
+                for col in chunk.columns:
+                    chunk[col] = chunk[col].map(
+                        lambda x: (
+                            str(x)
+                            if not isinstance(x, (list, dict, set, tuple, np.ndarray))
+                            else json.dumps(x)
+                        )
+                    )  # 배열/리스트/딕셔너리 데이터를 문자열로 변환
 
                 for _, row in tqdm(
                     chunk.iterrows(),

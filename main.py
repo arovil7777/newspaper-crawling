@@ -35,16 +35,13 @@ def main():
     )
 
     # 기간 설정
-    start_date = "2024-06-23"  # 시작 날짜 (YYYY-MM-DD 형식) 
+    start_date = "2024-06-23"  # 시작 날짜 (YYYY-MM-DD 형식)
     end_date = "2024-06-30"  # 종료 날짜 (YYYY-MM-DD 형식)
     interval = "daily"  # 수집 주기 (daily, weekly, monthly, yearly)
 
     article_crawler = ArticleCrawler()
     all_articles = []  # 크롤링한 전체 기사 데이터
     try:
-        # 한국 VPN 서버 연결
-        article_crawler.start_vpn("korea")
-
         logger.info("뉴스 링크 수집 중...")
 
         # 7일 단위로 날짜를 분할
@@ -100,9 +97,6 @@ def main():
                     f"{start_str}부터 {end_str}까지 크롤링된 기사가 없습니다."
                 )
                 continue
-
-        # VPN 종료
-        article_crawler.stop_vpn()
 
         # 데이터 디렉터리 내의 목록 가져옴
         base_dir = "data"
