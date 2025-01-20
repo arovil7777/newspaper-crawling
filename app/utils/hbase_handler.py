@@ -8,8 +8,10 @@ from tqdm import tqdm
 
 
 class HBaseConnector:
-    def __init__(self, host=Config.HBASE_HOST, port=Config.HBASE_PORT):
+    def __init__(self):
         # HBase 연결 설정
+        config = Config()
+        host, port = config.get_hbase_url()
         try:
             self.connection = happybase.Connection(host=host, port=port)
             self.connection.open()

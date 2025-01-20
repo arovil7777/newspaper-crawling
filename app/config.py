@@ -47,13 +47,28 @@ def setup_logging(log_file: str):
 
 
 class Config:
-    HDFS_URL = os.getenv("HDFS_URL", "http://localhost:9870")
+    INTERNAL_HDFS_URL = os.getenv("INTERNAL_HDFS_URL", "http://localhost:9870")
+    EXTERNAL_HDFS_URL = os.getenv("EXTERNAL_HDFS_URL", "http://localhost:9870")
     HDFS_USER = os.getenv("HDFS_USER", "hadoop")
     HDFS_DIR = os.getenv("HDFS_DIR", "/data")
-    HBASE_HOST = os.getenv("HBASE_HOST", "localhost")
-    HBASE_PORT = int(os.getenv("HBASE_PORT", 9090))
+    INTERNAL_HBASE_HOST = os.getenv("INTERNAL_HBASE_HOST", "localhost")
+    INTERNAL_HBASE_PORT = int(os.getenv("INTERNAL_HBASE_PORT", 9090))
+    EXTERNAL_HBASE_HOST = os.getenv("EXTERNAL_HBASE_HOST", "localhost")
+    EXTERNAL_HBASE_PORT = int(os.getenv("EXTERNAL_HBASE_PORT", 9090))
     TABLE_NAME = os.getenv("TABLE_NAME", "articles_table")
     STOP_WORD_PATH = os.path.join(os.getcwd(), "app/utils/StopWords.txt")
+
+    # 현재 환경에 따라 선택 (기본값: 내부망)
+    USE_EXTERNAL = True  # True로 설정하면 외부망 사용
+
+    def get_hdfs_url(self):
+        return self.EXTERNAL_HDFS_URL if self.USE_EXTERNAL else self.INTERNAL_HDFS_URL
+
+    def get_hbase_url(self):
+        if self.USE_EXTERNAL:
+            return self.EXTERNAL_HBASE_HOST, self.EXTERNAL_HBASE_PORT
+        else:
+            return self.INTERNAL_HBASE_HOST, self.INTERNAL_HBASE_PORT
 
 
 # 로깅 설정
