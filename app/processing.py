@@ -56,7 +56,7 @@ def group_articles_by_site_and_publisher(articles: list, date_str: str) -> dict:
 def extract_morphemes_and_count(data: list) -> dict:
     morphemes_dict = {}
     for article in data:
-        morphemes = article.get("nomorphemesuns", [])
+        morphemes = article.get("morphemes", [])
         for morpheme in morphemes:
             if morpheme in morphemes_dict:
                 morphemes_dict[morpheme] += 1
@@ -364,6 +364,7 @@ def upload_csv_to_hbase(local_path):
         hbase_connector.close_connection()
     except Exception as e:
         logger.error(f"디렉터리 내 CSV 파일 처리 중 에러 발생: {e}")
+        logger.error(traceback.format_exc())
 
 
 def send_to_hbase_with_contents(contents) -> None:

@@ -24,17 +24,35 @@ class ContentAnalyzer:
                 cls.stop_words = []
 
     @classmethod
+    def extract_nouns(cls, content: str):
+        if not content:
+            return []
+        try:
+            tokens = cls.kiwi.analyze(content, top_n=1)[0][0]
+            unique_nouns = set(
+                token[0] for token in tokens if token[1].startswith("NN")
+            )
+            return sorted(unique_nouns)
+        except Exception as e:
+            logger.error(f"명사 추출 중 에러 발생: {e}")
+            return []
+
+    @classmethod
     def extract_morphemes(
         cls, contents: List[str], stop_word_path: str = Config.STOP_WORD_PATH
     ) -> List[List[str]]:
         # 불용어 로드
         cls.load_stop_words(stop_word_path)
-        result = []
+        result = set()
+
+        # 명사 추출
+        nouns = cls.extract_nouns(contents)
+        result.update(nouns)
 
         for content in contents:
             words = []
             if not isinstance(content, str) or not content.strip():
-                result.append(words)
+                result.update(words)
                 continue
 
             analyzed = cls.kiwi.analyze(content)
@@ -52,7 +70,7 @@ class ContentAnalyzer:
                     ) not in cls.stop_words:
                         sentence_tokens.append(token + "다")
             if sentence_tokens:
-                result.append(sentence_tokens)
+                result.update(sentence_tokens)
 
         # 중복 제거 및 정렬
-        return sorted(set(chain.from_iterable([tokens for tokens in result if tokens])))
+        return result # sorted(set(chain.from_iterable([tokens for tokens in result if tokens])))
