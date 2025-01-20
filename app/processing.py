@@ -118,6 +118,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
         date = date_str
 
     grouped_articles = group_articles_by_site_and_publisher(data, date)
+    hdfs_connector = HDFSConnector()
 
     for site, publishers in grouped_articles.items():
         site_dir = os.path.join(data_dir, site)
@@ -143,8 +144,14 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                     else:
                         save_to_json(morphemes_dict, publisher_file_path)
 
-                    upload_aggregated_files_to_hdfs(publisher_file_path)
-                    logger.info(f"로컬에 JSON 파일 저장 완료: {publisher_file_path}")
+                    # HDFS 업로드
+                    hdfs_file_path = os.path.join(
+                        Config.HDFS_DIR, site, date, file_name
+                    )
+                    hdfs_connector.upload_file(publisher_file_path, hdfs_file_path)
+                    logger.info(
+                        f"로컬 및 HDFS에 JSON 파일 저장 완료: {publisher_file_path} -> {hdfs_file_path}"
+                    )
                     file_paths.append(publisher_file_path)
                 except Exception as e:
                     logger.error(f"'publisher_file_path' JSON 저장 중 에러 발생: {e}")
@@ -168,8 +175,12 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
             else:
                 save_to_json(total_morphemes_dict, total_file_path)
 
-            upload_aggregated_files_to_hdfs(total_file_path)
-            logger.info(f"로컬에 JSON 파일 저장 완료: {total_file_path}")
+            # HDFS 업로드
+            hdfs_file_path = os.path.join(Config.HDFS_DIR, site, date, total_file_name)
+            hdfs_connector.upload_file(total_file_path, hdfs_file_path)
+            logger.info(
+                f"로컬 및 HDFS에 JSON 파일 저장 완료: {total_file_path} -> {hdfs_file_path}"
+            )
             file_paths.append(total_file_path)
         except Exception as e:
             logger.error(f"'total_file_path' JSON 저장 중 에러 발생: {e}")
@@ -364,7 +375,6 @@ def upload_csv_to_hbase(local_path):
         hbase_connector.close_connection()
     except Exception as e:
         logger.error(f"디렉터리 내 CSV 파일 처리 중 에러 발생: {e}")
-        logger.error(traceback.format_exc())
 
 
 def send_to_hbase_with_contents(contents) -> None:
