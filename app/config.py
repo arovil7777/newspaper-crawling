@@ -59,7 +59,7 @@ class Config:
     STOP_WORD_PATH = os.path.join(os.getcwd(), "app/utils/StopWords.txt")
 
     # 현재 환경에 따라 선택 (기본값: 내부망)
-    USE_EXTERNAL = True  # True로 설정하면 외부망 사용
+    USE_EXTERNAL = False  # True로 설정하면 외부망 사용
 
     def get_hdfs_url(self):
         return self.EXTERNAL_HDFS_URL if self.USE_EXTERNAL else self.INTERNAL_HDFS_URL

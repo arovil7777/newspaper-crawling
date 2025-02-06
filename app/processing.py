@@ -1,4 +1,5 @@
 import os
+import re
 from collections import defaultdict
 from app.utils.csv_handler import append_to_csv, load_from_csv
 from app.utils.json_handler import save_to_json, load_from_json
@@ -6,7 +7,6 @@ from app.utils.hdfs_handler import HDFSConnector
 from app.utils.hbase_handler import HBaseConnector
 from app.config import Config, logger
 from datetime import datetime, timedelta
-import re
 
 # 주요 언론사 목록
 main_publisher_list = [
@@ -118,7 +118,6 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
         date = date_str
 
     grouped_articles = group_articles_by_site_and_publisher(data, date)
-    hdfs_connector = HDFSConnector()
 
     for site, publishers in grouped_articles.items():
         site_dir = os.path.join(data_dir, site)
@@ -144,14 +143,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
                     else:
                         save_to_json(morphemes_dict, publisher_file_path)
 
-                    # HDFS 업로드
-                    hdfs_file_path = os.path.join(
-                        Config.HDFS_DIR, site, date, file_name
-                    )
-                    hdfs_connector.upload_file(publisher_file_path, hdfs_file_path)
-                    logger.info(
-                        f"로컬 및 HDFS에 JSON 파일 저장 완료: {publisher_file_path} -> {hdfs_file_path}"
-                    )
+                    logger.info(f"로컬에 JSON 파일 저장 완료: {publisher_file_path}")
                     file_paths.append(publisher_file_path)
                 except Exception as e:
                     logger.error(f"'publisher_file_path' JSON 저장 중 에러 발생: {e}")
@@ -175,12 +167,7 @@ def save_articles_to_json_by_site_and_publisher(data: list, date_str: str) -> li
             else:
                 save_to_json(total_morphemes_dict, total_file_path)
 
-            # HDFS 업로드
-            hdfs_file_path = os.path.join(Config.HDFS_DIR, site, date, total_file_name)
-            hdfs_connector.upload_file(total_file_path, hdfs_file_path)
-            logger.info(
-                f"로컬 및 HDFS에 JSON 파일 저장 완료: {total_file_path} -> {hdfs_file_path}"
-            )
+            logger.info(f"로컬에 JSON 파일 저장 완료: {total_file_path}")
             file_paths.append(total_file_path)
         except Exception as e:
             logger.error(f"'total_file_path' JSON 저장 중 에러 발생: {e}")

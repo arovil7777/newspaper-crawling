@@ -10,7 +10,7 @@ from app.processing import (
     calculate_date_ranges,
     process_and_save_aggregated_data_from_directories,
 )
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 def save_data_format(format, articles, date):
@@ -35,8 +35,9 @@ def main():
     )
 
     # 기간 설정
-    start_date = "2024-06-23"  # 시작 날짜 (YYYY-MM-DD 형식)
-    end_date = "2024-06-30"  # 종료 날짜 (YYYY-MM-DD 형식)
+    previous_date = datetime.now() - timedelta(days=1)  # 전날 날짜
+    start_date = previous_date.strftime("%Y-%m-%d")  # 시작 날짜 (YYYY-MM-DD 형식)
+    end_date = previous_date.strftime("%Y-%m-%d")  # 종료 날짜 (YYYY-MM-DD 형식)
     interval = "daily"  # 수집 주기 (daily, weekly, monthly, yearly)
 
     article_crawler = ArticleCrawler()
@@ -81,9 +82,6 @@ def main():
 
             if all_articles:
                 try:
-                    # CSV 파일로 크롤링 데이터 저장
-                    save_data_format("CSV", articles, date=start_str)
-
                     # HBase에 크롤링 데이터 저장
                     save_data_format("HBASE", articles, date=start_str)
 

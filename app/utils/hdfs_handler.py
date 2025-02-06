@@ -6,12 +6,12 @@ from requests.exceptions import ConnectTimeout, ConnectionError
 
 
 class HDFSConnector:
-    def __init__(self, user=Config.HDFS_USER, timeout=120):
+    def __init__(self, user=Config.HDFS_USER):
         # HDFS 연결 설정
         config = Config()
         hdfs_url = config.get_hdfs_url()
         try:
-            self.client = InsecureClient(hdfs_url, user=user, timeout=timeout)
+            self.client = InsecureClient(hdfs_url, user=user)
             logger.info(f"HDFS 연결 성공: {hdfs_url} (사용자: {user})")
         except Exception as e:
             logger.critical(f"HDFS 연결 실패: {e}")
